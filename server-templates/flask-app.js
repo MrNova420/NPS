@@ -1,19 +1,29 @@
 /**
- * Python Flask Web App Template
+ * Python Flask Web App Template - Production Grade
+ * Features: Gunicorn WSGI server, SQLAlchemy ORM, CORS, error handling
  */
 
 module.exports = {
     name: 'Python Flask App',
-    description: 'Full-featured Flask web application with templates',
+    description: 'Production-grade Flask web application with Gunicorn, database support, and monitoring',
     category: 'Web',
     icon: '🐍',
     defaultPort: 5000,
     requirements: ['python', 'pip'],
     
+    // Resource requirements
+    resources: {
+        cpu: 8,
+        memory: 256,
+        priority: 'medium',
+        bandwidth: { download: 5, upload: 5 }
+    },
+    
     configOptions: [
         { name: 'appName', label: 'App Name', type: 'text', required: true },
         { name: 'debug', label: 'Debug Mode', type: 'checkbox', default: false },
-        { name: 'database', label: 'Enable Database', type: 'checkbox', default: false }
+        { name: 'database', label: 'Enable Database', type: 'checkbox', default: false },
+        { name: 'workers', label: 'Gunicorn Workers', type: 'number', default: 2 }
     ],
 
     async deploy(server, sshExec) {

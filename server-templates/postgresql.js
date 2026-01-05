@@ -1,14 +1,23 @@
 /**
- * PostgreSQL Database Server Template
+ * PostgreSQL Database Server Template - Production Grade
+ * Features: Optimized for ARM, connection pooling, automatic backups
  */
 
 module.exports = {
     name: 'PostgreSQL Database',
-    description: 'Managed PostgreSQL database instance',
+    description: 'Production-grade PostgreSQL server with optimized ARM configuration and automatic backups',
     category: 'Database',
     icon: '🐘',
     defaultPort: 5432,
     requirements: ['postgresql'],
+    
+    // Resource requirements
+    resources: {
+        cpu: 15,
+        memory: 512,
+        priority: 'high',
+        bandwidth: { download: 2, upload: 2 }
+    },
     
     configOptions: [
         { name: 'dbName', label: 'Database Name', type: 'text', required: true, placeholder: 'mydb' },

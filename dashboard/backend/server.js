@@ -16,6 +16,10 @@ const StateManager = require('../../core/state-manager');
 const AuthManager = require('../../core/security/auth-manager');
 const MonitoringManager = require('../../core/monitoring/monitoring-manager');
 const BackupManager = require('../../core/backup-manager');
+const ProcessManager = require('../../core/process-manager');
+const ResourceAllocator = require('../../core/resource-allocator');
+const ThermalManager = require('../../core/thermal-manager');
+const NetworkManager = require('../../core/network-manager');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -39,6 +43,10 @@ if (!process.env.ANDROID_HOST && !isTermux) {
 // Initialize Enterprise Managers
 const stateManager = new StateManager();
 const perfManager = new PerformanceManager();
+const processManager = new ProcessManager();
+const resourceAllocator = new ResourceAllocator();
+const thermalManager = new ThermalManager();
+const networkManager = new NetworkManager();
 let authManager, monitoringManager, backupManager;
 
 // Try to initialize enterprise features (optional)
@@ -54,7 +62,11 @@ try {
 // Initialize core managers
 Promise.all([
     stateManager.initialize().catch(err => console.error('State Manager failed:', err.message)),
-    perfManager.initialize().catch(err => console.error('Performance Manager failed:', err.message))
+    perfManager.initialize().catch(err => console.error('Performance Manager failed:', err.message)),
+    processManager.initialize().catch(err => console.error('Process Manager failed:', err.message)),
+    resourceAllocator.initialize().catch(err => console.error('Resource Allocator failed:', err.message)),
+    thermalManager.initialize().catch(err => console.error('Thermal Manager failed:', err.message)),
+    networkManager.initialize().catch(err => console.error('Network Manager failed:', err.message))
 ]).then(() => {
     console.log('✅ Core managers initialized');
 }).catch(error => {
@@ -113,6 +125,31 @@ class ServerManager {
     }
 
     async createServer(config) {
+        const template = this.loadTemplate(config.type);
+        
+        // Check thermal safety
+        const thermalCheck = thermalManager.isSafeToStart(template.resources?.priority || 'medium');
+        if (!thermalCheck.safe) {
+            throw new Error(`Cannot start server: ${thermalCheck.reason} - ${thermalCheck.recommendation}`);
+        }
+
+        // Check resource availability
+        const resources = template.resources || { cpu: 10, memory: 256, priority: 'medium' };
+        
+        // Check if we can allocate resources
+        if (!resourceAllocator.canAllocate(config.type, resources)) {
+            const util = resourceAllocator.getUtilization();
+            throw new Error(`Insufficient resources. CPU: ${util.cpu.available}% available, Memory: ${util.memory.available}MB available`);
+        }
+
+        // Check network availability if needed
+        if (resources.bandwidth) {
+            const netCheck = networkManager.canAllocate(resources.bandwidth);
+            if (!netCheck.canAllocate) {
+                throw new Error(`Insufficient bandwidth. Upload: ${netCheck.available.uploadMbps}Mbps available`);
+            }
+        }
+
         const server = {
             id: Date.now().toString(),
             name: config.name,
@@ -121,6 +158,7 @@ class ServerManager {
             port: config.port || this.findAvailablePort(),
             created: new Date().toISOString(),
             config: config,
+            resources: resources,
             stats: {
                 requests: 0,
                 uptime: 0,
@@ -145,18 +183,55 @@ class ServerManager {
             server.status = 'deploying';
             this.broadcast({ type: 'server_update', server });
 
-            await template.deploy(server, this.sshExec.bind(this));
+            // Allocate resources
+            const allocation = await resourceAllocator.allocate(
+                server.id, 
+                server.type, 
+                server.resources
+            );
+            server.allocation = allocation;
+
+            // Allocate bandwidth if needed
+            if (server.resources.bandwidth) {
+                const bandwidthAlloc = networkManager.allocateBandwidth(
+                    server.id,
+                    server.resources.bandwidth
+                );
+                server.bandwidthAllocation = bandwidthAlloc;
+            }
+
+            // Deploy using template
+            const deployResult = await template.deploy(server, this.sshExec.bind(this));
+            server.deployResult = deployResult;
+
+            // Register with process manager if PID is available
+            if (deployResult.pid) {
+                // Process manager tracks this
+                server.pm = {
+                    managed: true,
+                    pid: deployResult.pid
+                };
+            }
 
             server.status = 'running';
             server.stats.startTime = Date.now();
             await this.saveServers();
             
             this.broadcast({ type: 'server_update', server });
+            console.log(`✅ Server ${server.name} deployed successfully`);
         } catch (error) {
             server.status = 'failed';
             server.error = error.message;
+            
+            // Release allocated resources
+            resourceAllocator.release(server.id);
+            if (server.resources.bandwidth) {
+                networkManager.releaseBandwidth(server.id);
+            }
+            
             await this.saveServers();
             this.broadcast({ type: 'server_error', server, error: error.message });
+            console.error(`❌ Server ${server.name} deployment failed:`, error.message);
         }
     }
 
@@ -195,6 +270,12 @@ class ServerManager {
 
         const template = this.loadTemplate(server.type);
         await template.delete(server, this.sshExec.bind(this));
+
+        // Release resources
+        resourceAllocator.release(serverId);
+        if (server.resources?.bandwidth) {
+            networkManager.releaseBandwidth(serverId);
+        }
 
         this.servers.delete(serverId);
         await this.saveServers();
@@ -490,6 +571,82 @@ app.post('/api/system/execute', async (req, res) => {
 // ============================================
 // ENTERPRISE API ENDPOINTS
 // ============================================
+
+// Resource utilization
+app.get('/api/system/resources', (req, res) => {
+    try {
+        const utilization = resourceAllocator.getUtilization();
+        const recommendations = resourceAllocator.getCapacityRecommendations();
+        res.json({ utilization, recommendations });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Thermal status
+app.get('/api/system/thermal', (req, res) => {
+    try {
+        const report = thermalManager.getReport();
+        const cooling = thermalManager.getCoolingRecommendations();
+        res.json({ ...report, cooling });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Network status
+app.get('/api/system/network', async (req, res) => {
+    try {
+        const metrics = networkManager.getMetrics();
+        const health = await networkManager.getHealthStatus();
+        const recommendations = networkManager.getBandwidthRecommendations();
+        res.json({ metrics, health, recommendations });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Process list
+app.get('/api/system/processes', (req, res) => {
+    try {
+        const processes = processManager.list();
+        res.json({ processes });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// System health check
+app.get('/api/system/health', async (req, res) => {
+    try {
+        const health = {
+            status: 'healthy',
+            timestamp: new Date().toISOString(),
+            managers: {
+                state: stateManager ? 'active' : 'inactive',
+                performance: perfManager ? 'active' : 'inactive',
+                process: processManager ? 'active' : 'inactive',
+                resource: resourceAllocator ? 'active' : 'inactive',
+                thermal: thermalManager ? 'active' : 'inactive',
+                network: networkManager ? 'active' : 'inactive'
+            },
+            thermal: thermalManager.getState(),
+            resources: resourceAllocator.getUtilization(),
+            network: networkManager.getMetrics()
+        };
+        
+        // Check if any critical issues
+        if (health.thermal.status === 'critical' || health.thermal.status === 'emergency') {
+            health.status = 'critical';
+        } else if (health.resources.cpu.percentage > 90 || health.resources.memory.percentage > 90) {
+            health.status = 'degraded';
+        }
+        
+        res.json(health);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
 
 // Authentication
 app.post('/api/auth/login', async (req, res) => {

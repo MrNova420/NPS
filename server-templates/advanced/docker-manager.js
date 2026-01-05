@@ -1,15 +1,23 @@
 /**
- * Docker Container Manager Template - Advanced
- * Full Docker orchestration with compose support
+ * Docker Container Manager Template - Advanced Production Grade
+ * Full Docker orchestration with compose support, monitoring, auto-restart
  */
 
 module.exports = {
     name: 'Docker Container Manager',
-    description: 'Run any Docker container with full management - Databases, Apps, Services',
+    description: 'Production-grade Docker orchestration - Run any container with full management, health checks, and monitoring',
     category: 'Advanced',
     icon: '🐳',
     defaultPort: 0,
     requirements: ['proot-distro', 'docker'],
+    
+    // Resource requirements (base, actual usage depends on containers)
+    resources: {
+        cpu: 10,
+        memory: 256,
+        priority: 'high',
+        bandwidth: { download: 10, upload: 10 }
+    },
     
     configOptions: [
         {

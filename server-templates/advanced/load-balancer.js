@@ -1,15 +1,23 @@
 /**
- * Load Balancer & Reverse Proxy Template - Advanced
- * High-performance load balancing with health checks, SSL, caching
+ * Load Balancer & Reverse Proxy Template - Advanced Production Grade
+ * Enterprise load balancing with health checks, SSL, caching, rate limiting
  */
 
 module.exports = {
     name: 'Load Balancer / Reverse Proxy',
-    description: 'Enterprise load balancer - distribute traffic, SSL termination, caching, failover',
+    description: 'Production-grade enterprise load balancer - Traffic distribution, SSL termination, caching, failover, rate limiting',
     category: 'Advanced',
     icon: '⚖️',
     defaultPort: 80,
     requirements: ['nginx', 'openssl'],
+    
+    // Resource requirements
+    resources: {
+        cpu: 15,
+        memory: 256,
+        priority: 'high',
+        bandwidth: { download: 40, upload: 40 }
+    },
     
     configOptions: [
         {

@@ -1,15 +1,23 @@
 /**
- * DNS Server Template
+ * DNS Server Template - Production Grade
  * Full DNS server with zone management, dynamic DNS, and DNS-over-HTTPS
  */
 
 module.exports = {
     name: 'DNS Server',
-    description: 'Complete DNS server with zone management, DDNS, DoH, and DNS-over-TLS support',
+    description: 'Production-grade DNS server - Zone management, DDNS, DoH, DNS-over-TLS, DNSSEC support',
     category: 'Network',
     icon: '🌐',
     defaultPort: 53,
     requirements: ['nodejs', 'python3'],
+    
+    // Resource requirements
+    resources: {
+        cpu: 5,
+        memory: 128,
+        priority: 'high',
+        bandwidth: { download: 5, upload: 5 }
+    },
     
     configOptions: [
         {

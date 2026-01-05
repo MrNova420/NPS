@@ -1,15 +1,23 @@
 /**
- * Full-Stack Web Application Template - Advanced
- * Complete MERN/PERN/MEAN stack with auto-configuration
+ * Full-Stack Web Application Template - Advanced Production Grade
+ * Complete MERN/PERN/MEAN stack with auto-configuration, PM2, Nginx
  */
 
 module.exports = {
     name: 'Full-Stack Web App',
-    description: 'Complete web application - Frontend, Backend, Database, Nginx reverse proxy',
+    description: 'Production-grade full-stack application - Frontend, Backend, Database, Nginx reverse proxy, PM2 process management',
     category: 'Advanced',
     icon: '🌟',
     defaultPort: 80,
     requirements: ['nodejs', 'npm', 'nginx', 'postgresql'],
+    
+    // Resource requirements
+    resources: {
+        cpu: 25,
+        memory: 768,
+        priority: 'high',
+        bandwidth: { download: 15, upload: 15 }
+    },
     
     configOptions: [
         {

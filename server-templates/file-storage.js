@@ -1,19 +1,30 @@
 /**
- * File Storage Server Template - Personal Cloud
+ * File Storage Server Template - Production Grade
+ * Features: FastAPI, authentication, upload/download, file management
  */
 
 module.exports = {
     name: 'File Storage Server',
-    description: 'Personal cloud storage with web interface',
+    description: 'Production-grade personal cloud storage with FastAPI, authentication, and file management',
     category: 'Storage',
     icon: '☁️',
     defaultPort: 8080,
-    requirements: ['python'],
+    requirements: ['python', 'pip'],
+    
+    // Resource requirements
+    resources: {
+        cpu: 8,
+        memory: 256,
+        priority: 'medium',
+        bandwidth: { download: 20, upload: 20 }
+    },
     
     configOptions: [
         { name: 'storagePath', label: 'Storage Path', type: 'text', default: '~/storage/shared' },
+        { name: 'username', label: 'Username', type: 'text', default: 'admin' },
         { name: 'password', label: 'Access Password', type: 'password', required: true },
-        { name: 'maxUploadSize', label: 'Max Upload Size (MB)', type: 'number', default: 100 }
+        { name: 'maxUploadSize', label: 'Max Upload Size (MB)', type: 'number', default: 100 },
+        { name: 'enableZip', label: 'Enable Folder Download (ZIP)', type: 'checkbox', default: true }
     ],
 
     async deploy(server, sshExec) {

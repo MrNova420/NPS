@@ -1,15 +1,23 @@
 /**
- * Complete Self-Hosting Suite Template
+ * Complete Self-Hosting Suite Template - Production Grade
  * VPN, Email, Git Server, Personal Cloud, and Password Manager in one package
  */
 
 module.exports = {
     name: 'Self-Hosting Suite',
-    description: 'Complete self-hosting solution with VPN, Email, Git, Cloud Storage, and Password Manager',
+    description: 'Production-grade self-hosting suite - VPN, Email, Git server, Cloud storage, Password manager, all-in-one',
     category: 'Self-Hosting',
     icon: '🏠',
     defaultPort: 8000,
     requirements: ['nodejs', 'python3', 'git', 'wireguard'],
+    
+    // Resource requirements (comprehensive suite)
+    resources: {
+        cpu: 35,
+        memory: 1024,
+        priority: 'high',
+        bandwidth: { download: 20, upload: 20 }
+    },
     
     configOptions: [
         {

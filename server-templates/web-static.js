@@ -1,14 +1,23 @@
 /**
- * Web Server Template - Static Website Hosting
+ * Web Server Template - Static Website Hosting (Production Grade)
+ * Features: Nginx-based with compression, caching, and security headers
  */
 
 module.exports = {
     name: 'Static Website',
-    description: 'Host static HTML/CSS/JS websites with Nginx',
+    description: 'Production-grade static website hosting with Nginx, compression, and optimized caching',
     category: 'Web',
     icon: '🌐',
     defaultPort: 8080,
     requirements: ['nginx'],
+    
+    // Resource requirements
+    resources: {
+        cpu: 5,
+        memory: 64,
+        priority: 'low',
+        bandwidth: { download: 10, upload: 10 }
+    },
     
     configOptions: [
         { name: 'domain', label: 'Domain (Optional)', type: 'text', placeholder: 'example.com' },

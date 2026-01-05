@@ -1,0 +1,25 @@
+{
+  "name": "android-server-manager-dashboard",
+  "version": "2.0.0",
+  "description": "Advanced server management platform for Android devices",
+  "main": "backend/server.js",
+  "scripts": {
+    "start": "node backend/server.js",
+    "dev": "nodemon backend/server.js",
+    "setup": "npm install && node setup.js"
+  },
+  "keywords": ["android", "server", "management", "automation", "docker", "orchestration"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "ws": "^8.14.2",
+    "node-schedule": "^2.1.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}

@@ -1,19 +1,29 @@
 /**
- * AI Model Inference Server Template
+ * AI Model Inference Server Template - Production Grade
+ * Features: ONNX Runtime, FastAPI, async processing, model caching
  */
 
 module.exports = {
     name: 'AI Inference Server',
-    description: 'Serve ML models with REST API (ONNX Runtime)',
+    description: 'Production-grade ML inference server with ONNX Runtime, FastAPI, and monitoring',
     category: 'AI/ML',
     icon: '🤖',
-    defaultPort: 5000,
+    defaultPort: 8000,
     requirements: ['python', 'pip'],
     
+    // Resource requirements
+    resources: {
+        cpu: 30,
+        memory: 512,
+        priority: 'high',
+        bandwidth: { download: 10, upload: 10 }
+    },
+    
     configOptions: [
-        { name: 'modelType', label: 'Model Type', type: 'select', options: ['text-classification', 'image-classification', 'custom'], default: 'text-classification' },
+        { name: 'modelType', label: 'Model Type', type: 'select', options: ['text-classification', 'image-classification', 'embedding', 'custom'], default: 'text-classification' },
         { name: 'maxBatchSize', label: 'Max Batch Size', type: 'number', default: 10 },
-        { name: 'apiKey', label: 'API Key (Optional)', type: 'password' }
+        { name: 'apiKey', label: 'API Key (Optional)', type: 'password' },
+        { name: 'enableCache', label: 'Enable Result Caching', type: 'checkbox', default: true }
     ],
 
     async deploy(server, sshExec) {

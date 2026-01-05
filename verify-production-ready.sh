@@ -200,14 +200,18 @@ section "8. Dashboard Dependencies"
 if [ -d "dashboard/node_modules" ]; then
     pass "Dashboard dependencies installed"
 else
-    info "Installing dashboard dependencies..."
-    cd dashboard
-    npm install --silent > /dev/null 2>&1
-    cd ..
-    if [ -d "dashboard/node_modules" ]; then
-        pass "Dashboard dependencies installed"
+    if [ -d "dashboard" ]; then
+        info "Installing dashboard dependencies..."
+        cd dashboard || { fail "Cannot access dashboard directory"; }
+        npm install --silent > /dev/null 2>&1
+        cd ..
+        if [ -d "dashboard/node_modules" ]; then
+            pass "Dashboard dependencies installed"
+        else
+            fail "Failed to install dashboard dependencies"
+        fi
     else
-        fail "Failed to install dashboard dependencies"
+        fail "Dashboard directory not found"
     fi
 fi
 
@@ -231,8 +235,11 @@ for script in "${SCRIPTS[@]}"; do
             pass "Setup script executable: $script"
         else
             info "Making $script executable"
-            chmod +x "$script"
-            pass "Setup script now executable: $script"
+            if chmod +x "$script" 2>/dev/null; then
+                pass "Setup script now executable: $script"
+            else
+                fail "Failed to make $script executable"
+            fi
         fi
     else
         fail "Setup script missing: $script"

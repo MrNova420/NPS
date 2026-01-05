@@ -302,7 +302,7 @@ class AutoRecoverySystem extends EventEmitter {
      * Manual recovery trigger
      */
     async triggerRecovery(serverId) {
-        const server = this.serverManager.getServerById(serverId);
+        const server = this.serverManager.servers.get(serverId);
         if (!server) {
             throw new Error('Server not found');
         }

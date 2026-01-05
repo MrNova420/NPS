@@ -67,6 +67,8 @@ try {
 }
 
 // Initialize core managers
+const AutoRecoverySystem = require('../../core/auto-recovery-system');
+
 Promise.all([
     stateManager.initialize().catch(err => console.error('State Manager failed:', err.message)),
     perfManager.initialize().catch(err => console.error('Performance Manager failed:', err.message)),
@@ -81,7 +83,6 @@ Promise.all([
     console.log('✅ Core managers initialized');
     
     // Initialize auto-recovery after health check system is ready
-    const AutoRecoverySystem = require('../../core/auto-recovery-system');
     autoRecoverySystem = new AutoRecoverySystem(healthCheckSystem, serverManager);
     return autoRecoverySystem.initialize();
 }).then(() => {

@@ -160,7 +160,7 @@ if (ENABLE_CLUSTERING && cluster.isMaster) {
     });
 
     // Metrics endpoint (if enabled)
-    ${server.config.enableMetrics ? \`
+    ${server.config.enableMetrics ? `
     app.get('/metrics', (req, res) => {
         const mem = process.memoryUsage();
         res.json({
@@ -176,7 +176,7 @@ if (ENABLE_CLUSTERING && cluster.isMaster) {
             cpu: process.cpuUsage()
         });
     });
-    \` : ''}
+    ` : ''}
 
     // API Documentation endpoint
     app.get('/api', (req, res) => {
@@ -308,9 +308,9 @@ EOF`);
             port: server.port,
             workers: enableClustering ? workers : 1,
             endpoints: {
-                health: \`http://localhost:\${server.port}/health\`,
-                api: \`http://localhost:\${server.port}/api\`,
-                metrics: server.config.enableMetrics ? \`http://localhost:\${server.port}/metrics\` : null
+                health: 'http://localhost:' + server.port + '/health',
+                api: 'http://localhost:' + server.port + '/api',
+                metrics: server.config.enableMetrics ? 'http://localhost:' + server.port + '/metrics' : null
             }
         };
     },

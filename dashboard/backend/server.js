@@ -67,7 +67,6 @@ try {
 }
 
 // Initialize core managers
-const AutoRecoverySystem = require('../../core/auto-recovery-system');
 
 Promise.all([
     stateManager.initialize().catch(err => console.error('State Manager failed:', err.message)),

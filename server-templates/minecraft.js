@@ -28,7 +28,7 @@ module.exports = {
         { name: 'memory', label: 'Memory (MB)', type: 'number', default: 1024 },
         { name: 'viewDistance', label: 'View Distance', type: 'number', default: 8 },
         { name: 'enableBackups', label: 'Enable Auto-Backup', type: 'checkbox', default: true }
-    },
+    ],
 
     async deploy(server, sshExec) {
         const instancePath = `~/server/instances/${server.id}`;

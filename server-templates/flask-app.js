@@ -350,9 +350,9 @@ EOF`);
             database: server.config.database,
             pid,
             endpoints: {
-                health: \`http://localhost:\${server.port}/health\`,
-                api: \`http://localhost:\${server.port}/api\`,
-                web: \`http://localhost:\${server.port}/\`
+                health: 'http://localhost:' + server.port + '/health',
+                api: 'http://localhost:' + server.port + '/api',
+                web: 'http://localhost:' + server.port + '/'
             }
         };
     },

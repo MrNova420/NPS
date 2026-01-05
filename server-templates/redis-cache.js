@@ -1,14 +1,23 @@
 /**
- * Redis Cache Server Template
+ * Redis Cache Server Template - Production Grade
+ * Features: Optimized for ARM, persistence, monitoring
  */
 
 module.exports = {
     name: 'Redis Cache',
-    description: 'High-performance in-memory data store and cache',
+    description: 'Production-grade in-memory data store with ARM optimization and persistence',
     category: 'Database',
     icon: '🔴',
     defaultPort: 6379,
     requirements: ['redis'],
+    
+    // Resource requirements
+    resources: {
+        cpu: 8,
+        memory: 256,
+        priority: 'high',
+        bandwidth: { download: 5, upload: 5 }
+    },
     
     configOptions: [
         { name: 'maxMemory', label: 'Max Memory (MB)', type: 'number', default: 256 },

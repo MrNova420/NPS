@@ -344,6 +344,32 @@ app.post('/api/servers/:id/:action', async (req, res) => {
     }
 });
 
+// Update server config
+app.patch('/api/servers/:id', async (req, res) => {
+    const { id } = req.params;
+    const updates = req.body;
+    
+    try {
+        const server = serverManager.servers.get(id);
+        if (!server) {
+            return res.status(404).json({ error: 'Server not found' });
+        }
+        
+        // Update server properties
+        if (updates.name) server.name = updates.name;
+        if (updates.port) server.port = updates.port;
+        if (updates.memory_limit) server.config.memory_limit = updates.memory_limit;
+        if (updates.cpu_limit) server.config.cpu_limit = updates.cpu_limit;
+        
+        await serverManager.saveServers();
+        serverManager.broadcast({ type: 'server_update', server });
+        
+        res.json({ success: true, server });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Get server logs
 app.get('/api/servers/:id/logs', async (req, res) => {
     const { id } = req.params;

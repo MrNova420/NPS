@@ -420,6 +420,7 @@
         <div class="action-bar">
             <h1>Server Templates</h1>
             <div class="actions">
+                <button class="btn btn-secondary" onclick="showSystemControls()">🎛️ System</button>
                 <button class="btn btn-secondary" onclick="refreshAll()">🔄 Refresh</button>
                 <button class="btn btn-primary" onclick="showCustomServerModal()">➕ Custom Server</button>
             </div>
@@ -631,6 +632,7 @@
                             `<button class="btn btn-success" onclick="controlServer('${s.id}', 'start')">▶ Start</button>`
                         }
                         <button class="btn btn-secondary" onclick="controlServer('${s.id}', 'restart')">🔄 Restart</button>
+                        <button class="btn btn-secondary" onclick="showEditServer('${s.id}')">⚙️ Edit</button>
                         <button class="btn btn-secondary" onclick="viewLogs('${s.id}')">📄 Logs</button>
                         <button class="btn btn-danger" onclick="confirmDelete('${s.id}')">🗑 Delete</button>
                     </div>
@@ -781,6 +783,223 @@
             loadServers();
             updateSystemStats();
             showNotification('Refreshed successfully!', 'success');
+        }
+
+        // System Controls
+        function showSystemControls() {
+            const modal = document.getElementById('systemModal');
+            if (!modal) {
+                // Create system modal
+                const modalHTML = `
+                    <div class="modal" id="systemModal">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <div class="modal-title">🎛️ System Controls</div>
+                                <button class="close-btn" onclick="closeModal('systemModal')">&times;</button>
+                            </div>
+                            <div style="padding: 1.5rem;">
+                                <div style="display: flex; flex-direction: column; gap: 1rem;">
+                                    <button class="btn btn-primary" onclick="runSystemOptimization()">⚡ Run Optimization</button>
+                                    <button class="btn btn-secondary" onclick="viewPerformanceReport()">📊 Performance Report</button>
+                                    <button class="btn btn-secondary" onclick="exportConfig()">📥 Export Config</button>
+                                    <button class="btn btn-danger" onclick="restartAllServers()">🔄 Restart All Servers</button>
+                                    <button class="btn btn-danger" onclick="stopAllServers()">⏹️ Stop All Servers</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                document.body.insertAdjacentHTML('beforeend', modalHTML);
+            }
+            document.getElementById('systemModal').classList.add('active');
+        }
+
+        async function runSystemOptimization() {
+            try {
+                const response = await fetch('/api/system/optimize', { method: 'POST' });
+                const result = await response.json();
+                showNotification(result.message || 'Optimization completed!', 'success');
+            } catch (error) {
+                showNotification('Optimization failed: ' + error.message, 'error');
+            }
+        }
+
+        async function viewPerformanceReport() {
+            try {
+                const response = await fetch('/api/system/performance');
+                const report = await response.json();
+                const reportText = JSON.stringify(report, null, 2);
+                alert(`Performance Report:\n\n${reportText}`);
+            } catch (error) {
+                showNotification('Failed to load report: ' + error.message, 'error');
+            }
+        }
+
+        async function exportConfig() {
+            const config = {
+                servers: servers,
+                system: await (await fetch('/api/system/stats')).json(),
+                timestamp: new Date().toISOString()
+            };
+            const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `nps-config-${Date.now()}.json`;
+            a.click();
+            showNotification('Config exported!', 'success');
+        }
+
+        async function restartAllServers() {
+            if (!confirm('Restart ALL servers? This will cause downtime.')) return;
+            for (const server of servers) {
+                if (server.status === 'running') {
+                    await controlServer(server.id, 'restart');
+                }
+            }
+            showNotification('All servers restarting...', 'success');
+        }
+
+        async function stopAllServers() {
+            if (!confirm('Stop ALL servers? This will shut down everything.')) return;
+            for (const server of servers) {
+                if (server.status === 'running') {
+                    await controlServer(server.id, 'stop');
+                }
+            }
+            showNotification('All servers stopped', 'success');
+        }
+
+        // Edit Server
+        let currentServerId = null;
+        
+        function showEditServer(id) {
+            const server = servers.find(s => s.id === id);
+            if (!server) return;
+            
+            currentServerId = id;
+            const modal = document.getElementById('editModal');
+            if (!modal) {
+                const modalHTML = `
+                    <div class="modal" id="editModal">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <div class="modal-title">⚙️ Edit Server</div>
+                                <button class="close-btn" onclick="closeModal('editModal')">&times;</button>
+                            </div>
+                            <div style="padding: 1.5rem;">
+                                <form id="editForm" onsubmit="saveServerEdit(event)">
+                                    <div class="form-group">
+                                        <label class="form-label">Server Name</label>
+                                        <input type="text" id="editName" class="form-input" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label">Port</label>
+                                        <input type="number" id="editPort" class="form-input" required>
+                                    </div>
+                                    <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+                                        <button type="button" class="btn btn-secondary" style="flex: 1;" onclick="closeModal('editModal')">Cancel</button>
+                                        <button type="submit" class="btn btn-primary" style="flex: 1;">Save</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                document.body.insertAdjacentHTML('beforeend', modalHTML);
+            }
+            
+            document.getElementById('editName').value = server.name;
+            document.getElementById('editPort').value = server.port;
+            document.getElementById('editModal').classList.add('active');
+        }
+
+        async function saveServerEdit(event) {
+            event.preventDefault();
+            const name = document.getElementById('editName').value;
+            const port = parseInt(document.getElementById('editPort').value);
+            
+            try {
+                const response = await fetch(`/api/servers/${currentServerId}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, port })
+                });
+                
+                if (response.ok) {
+                    await loadServers();
+                    closeModal('editModal');
+                    showNotification('Server updated!', 'success');
+                } else {
+                    throw new Error('Update failed');
+                }
+            } catch (error) {
+                showNotification('Failed to update: ' + error.message, 'error');
+            }
+        }
+
+        // Better Logs Modal
+        let currentLogServer = null;
+        
+        async function viewLogs(id) {
+            currentLogServer = id;
+            const server = servers.find(s => s.id === id);
+            
+            const modal = document.getElementById('logsModal');
+            if (!modal) {
+                const modalHTML = `
+                    <div class="modal" id="logsModal">
+                        <div class="modal-content" style="max-width: 900px;">
+                            <div class="modal-header">
+                                <div class="modal-title">📄 Server Logs - ${server.name}</div>
+                                <button class="close-btn" onclick="closeModal('logsModal')">&times;</button>
+                            </div>
+                            <div style="padding: 1.5rem;">
+                                <pre id="logsContent" style="background: var(--darker); padding: 1rem; border-radius: 8px; max-height: 500px; overflow-y: auto; font-size: 0.85rem; line-height: 1.4; font-family: monospace;"></pre>
+                                <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
+                                    <button class="btn btn-secondary" onclick="refreshLogs()">🔄 Refresh</button>
+                                    <button class="btn btn-secondary" onclick="downloadLogs()">⬇️ Download</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                document.body.insertAdjacentHTML('beforeend', modalHTML);
+            }
+            
+            document.getElementById('logsModal').classList.add('active');
+            await refreshLogs();
+        }
+
+        async function refreshLogs() {
+            try {
+                const response = await fetch(`/api/servers/${currentLogServer}/logs`);
+                const { logs } = await response.json();
+                document.getElementById('logsContent').textContent = logs || 'No logs available';
+            } catch (error) {
+                document.getElementById('logsContent').textContent = 'Failed to load logs: ' + error.message;
+            }
+        }
+
+        function downloadLogs() {
+            const logs = document.getElementById('logsContent').textContent;
+            const server = servers.find(s => s.id === currentLogServer);
+            const blob = new Blob([logs], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${server.name}-logs-${Date.now()}.txt`;
+            a.click();
+            showNotification('Logs downloaded!', 'success');
+        }
+
+        // Update modal close to accept ID
+        function closeModal(id) {
+            if (id) {
+                document.getElementById(id).classList.remove('active');
+            } else {
+                document.querySelectorAll('.modal').forEach(m => m.classList.remove('active'));
+            }
         }
 
         // Initialize on load

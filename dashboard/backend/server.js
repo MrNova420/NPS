@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Advanced Server Management Platform - Main Dashboard Backend
- * Handles server creation, management, monitoring, and orchestration
+ * NPS - Enterprise Server Management Platform
+ * Production-grade server orchestration with military-level security
  */
 
 const express = require('express');
@@ -9,8 +9,13 @@ const { exec, spawn } = require('child_process');
 const fs = require('fs').promises;
 const path = require('path');
 const WebSocket = require('ws');
+
+// Core Managers
 const PerformanceManager = require('../../core/performance/manager');
 const StateManager = require('../../core/state-manager');
+const AuthManager = require('../../core/security/auth-manager');
+const MonitoringManager = require('../../core/monitoring/monitoring-manager');
+const BackupManager = require('../../core/backup-manager');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -22,20 +27,34 @@ const ANDROID_PORT = process.env.ANDROID_PORT || '8022';
 const ANDROID_USER = process.env.ANDROID_USER || (isTermux ? process.env.USER : 'u0_a');
 
 // Log connection info
+console.log('╔══════════════════════════════════════════════════╗');
+console.log('║  NPS - Enterprise Server Management Platform    ║');
+console.log('╚══════════════════════════════════════════════════╝');
 console.log(`📱 Android Connection: ${ANDROID_USER}@${ANDROID_HOST}:${ANDROID_PORT}`);
 if (!process.env.ANDROID_HOST && !isTermux) {
     console.log(`⚠️  Using default IP: ${ANDROID_HOST}`);
     console.log(`   Set ANDROID_HOST in .env to your phone's IP`);
-    console.log(`   Example: ANDROID_HOST=192.168.1.50`);
 }
 
-// Initialize State Manager
+// Initialize Enterprise Managers
 const stateManager = new StateManager();
-stateManager.initialize().catch(console.error);
-
-// Initialize Performance Manager
 const perfManager = new PerformanceManager();
-perfManager.initialize().catch(console.error);
+const authManager = new AuthManager();
+const monitoringManager = new MonitoringManager();
+const backupManager = new BackupManager();
+
+// Initialize all managers
+Promise.all([
+    stateManager.initialize(),
+    perfManager.initialize(),
+    authManager.initialize(),
+    monitoringManager.initialize(),
+    backupManager.initialize()
+]).then(() => {
+    console.log('✅ All enterprise managers initialized');
+}).catch(error => {
+    console.error('❌ Initialization failed:', error);
+});
 
 // Middleware
 app.use(express.json());
@@ -449,6 +468,142 @@ app.post('/api/system/execute', async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
+
+// ============================================
+// ENTERPRISE API ENDPOINTS
+// ============================================
+
+// Authentication
+app.post('/api/auth/login', async (req, res) => {
+    try {
+        const { username, password, mfaCode } = req.body;
+        const session = await authManager.login(username, password, mfaCode);
+        res.json(session);
+    } catch (error) {
+        res.status(401).json({ error: error.message });
+    }
+});
+
+app.post('/api/auth/logout', async (req, res) => {
+    try {
+        const { sessionId } = req.body;
+        await authManager.logout(sessionId);
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/auth/change-password', async (req, res) => {
+    try {
+        const { username, oldPassword, newPassword } = req.body;
+        await authManager.changePassword(username, oldPassword, newPassword);
+        res.json({ success: true });
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+});
+
+app.get('/api/auth/status', (req, res) => {
+    res.json(authManager.getSecurityStatus());
+});
+
+app.get('/api/auth/audit', async (req, res) => {
+    try {
+        const logs = await authManager.getAuditLog(req.query);
+        res.json(logs);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Monitoring & Alerts
+app.get('/api/monitoring/status', (req, res) => {
+    res.json(monitoringManager.getStatus());
+});
+
+app.get('/api/monitoring/metrics', (req, res) => {
+    const { from, to } = req.query;
+    const metrics = monitoringManager.getMetrics(
+        from ? parseInt(from) : Date.now() - 3600000,
+        to ? parseInt(to) : Date.now()
+    );
+    res.json(metrics);
+});
+
+app.get('/api/monitoring/alerts', (req, res) => {
+    const alerts = monitoringManager.getAlerts(req.query);
+    res.json(alerts);
+});
+
+app.post('/api/monitoring/alerts/:id/acknowledge', (req, res) => {
+    const { id } = req.params;
+    monitoringManager.acknowledgeAlert(parseFloat(id));
+    res.json({ success: true });
+});
+
+// Backup & Recovery
+app.post('/api/backup/create', async (req, res) => {
+    try {
+        const { type, targets } = req.body;
+        const backup = await backupManager.createBackup(type, targets);
+        res.json(backup);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/backup/list', (req, res) => {
+    const backups = backupManager.getBackups(req.query);
+    res.json(backups);
+});
+
+app.post('/api/backup/restore/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const result = await backupManager.restoreBackup(id, req.body);
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/backup/status', (req, res) => {
+    res.json(backupManager.getStatus());
+});
+
+// Enterprise Dashboard Stats
+app.get('/api/enterprise/dashboard', async (req, res) => {
+    try {
+        const dashboard = {
+            timestamp: Date.now(),
+            uptime: process.uptime(),
+            system: monitoringManager.getStatus(),
+            security: authManager.getSecurityStatus(),
+            backup: backupManager.getStatus(),
+            servers: {
+                total: serverManager.servers.size,
+                running: Array.from(serverManager.servers.values()).filter(s => s.status === 'running').length,
+                stopped: Array.from(serverManager.servers.values()).filter(s => s.status === 'stopped').length
+            },
+            performance: perfManager.getPerformanceReport ? await perfManager.getPerformanceReport() : {}
+        };
+        res.json(dashboard);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+    res.json({
+        status: 'healthy',
+        timestamp: Date.now(),
+        uptime: process.uptime(),
+        version: '2.0.0-enterprise'
+    });
+});
+
 
 // WebSocket connection
 const server = app.listen(PORT, async () => {

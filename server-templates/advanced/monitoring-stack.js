@@ -1,15 +1,23 @@
 /**
- * Monitoring Stack Template
- * Complete monitoring solution with Prometheus, Grafana, AlertManager, and exporters
+ * Monitoring Stack Template - Production Grade
+ * Complete monitoring with Grafana, Prometheus, AlertManager, optimized for ARM
  */
 
 module.exports = {
     name: 'Monitoring Stack',
-    description: 'Production monitoring with Grafana, Prometheus, AlertManager, and system exporters',
+    description: 'Production monitoring stack - Grafana, Prometheus, AlertManager, system exporters with ARM optimization',
     category: 'Monitoring',
     icon: '📊',
     defaultPort: 3000,
     requirements: ['nodejs', 'python3'],
+    
+    // Resource requirements (monitoring overhead)
+    resources: {
+        cpu: 20,
+        memory: 512,
+        priority: 'medium',
+        bandwidth: { download: 5, upload: 5 }
+    },
     
     configOptions: [
         {

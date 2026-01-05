@@ -1,15 +1,23 @@
 /**
- * CI/CD Pipeline Template
- * Complete CI/CD solution with Git, Jenkins/GitLab CI, automated testing and deployment
+ * CI/CD Pipeline Template - Production Grade
+ * Complete CI/CD solution with Git, automated testing, deployment
  */
 
 module.exports = {
     name: 'CI/CD Pipeline',
-    description: 'Automated CI/CD pipeline with Git hooks, build automation, testing, and deployment',
+    description: 'Production-grade CI/CD pipeline - Git hooks, automated builds, testing, deployment, artifact management',
     category: 'DevOps',
     icon: '🔄',
     defaultPort: 8080,
     requirements: ['git', 'nodejs', 'python3', 'docker'],
+    
+    // Resource requirements
+    resources: {
+        cpu: 20,
+        memory: 512,
+        priority: 'medium',
+        bandwidth: { download: 10, upload: 10 }
+    },
     
     configOptions: [
         { 

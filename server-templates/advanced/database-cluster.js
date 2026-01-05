@@ -1,15 +1,23 @@
 /**
- * Database Cluster Template
+ * Database Cluster Template - Production Grade
  * High-availability database cluster with replication, failover, and load balancing
  */
 
 module.exports = {
     name: 'Database Cluster',
-    description: 'Multi-master database cluster with automatic failover, replication, and load balancing',
+    description: 'Production-grade HA database cluster - Multi-master replication, automatic failover, load balancing',
     category: 'Database',
     icon: '🗄️',
     defaultPort: 5432,
     requirements: ['postgresql', 'mysql'],
+    
+    // Resource requirements (for 3-node cluster)
+    resources: {
+        cpu: 30,
+        memory: 768,
+        priority: 'high',
+        bandwidth: { download: 10, upload: 10 }
+    },
     
     configOptions: [
         {

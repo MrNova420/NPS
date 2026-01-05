@@ -1,15 +1,23 @@
 /**
- * SSL/HTTPS Reverse Proxy Template
+ * SSL/HTTPS Reverse Proxy Template - Production Grade
  * Auto-SSL with Let's Encrypt, reverse proxy, domain routing, HTTP/2, and security headers
  */
 
 module.exports = {
     name: 'SSL Reverse Proxy',
-    description: 'Automatic HTTPS with Let\'s Encrypt, reverse proxy, domain routing, and enterprise security',
+    description: 'Production-grade SSL reverse proxy - Auto Let\'s Encrypt HTTPS, domain routing, HTTP/2, enterprise security',
     category: 'Network',
     icon: '🔒',
     defaultPort: 443,
     requirements: ['nodejs', 'certbot'],
+    
+    // Resource requirements
+    resources: {
+        cpu: 10,
+        memory: 256,
+        priority: 'high',
+        bandwidth: { download: 30, upload: 30 }
+    },
     
     configOptions: [
         {

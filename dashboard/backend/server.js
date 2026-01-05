@@ -14,9 +14,20 @@ const StateManager = require('../../core/state-manager');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const ANDROID_HOST = process.env.ANDROID_HOST || 'localhost';
+
+// Detect environment and set defaults
+const isTermux = process.env.TERMUX_VERSION || process.env.PREFIX?.includes('com.termux');
+const ANDROID_HOST = process.env.ANDROID_HOST || (isTermux ? 'localhost' : '192.168.1.100');
 const ANDROID_PORT = process.env.ANDROID_PORT || '8022';
-const ANDROID_USER = process.env.ANDROID_USER || 'u0_a';
+const ANDROID_USER = process.env.ANDROID_USER || (isTermux ? process.env.USER : 'u0_a');
+
+// Log connection info
+console.log(`📱 Android Connection: ${ANDROID_USER}@${ANDROID_HOST}:${ANDROID_PORT}`);
+if (!process.env.ANDROID_HOST && !isTermux) {
+    console.log(`⚠️  Using default IP: ${ANDROID_HOST}`);
+    console.log(`   Set ANDROID_HOST in .env to your phone's IP`);
+    console.log(`   Example: ANDROID_HOST=192.168.1.50`);
+}
 
 // Initialize State Manager
 const stateManager = new StateManager();
@@ -414,9 +425,23 @@ app.post('/api/system/execute', async (req, res) => {
 });
 
 // WebSocket connection
-const server = app.listen(PORT, () => {
+const server = app.listen(PORT, async () => {
     console.log(`🚀 Server Management Dashboard running on http://localhost:${PORT}`);
-    console.log(`📱 Connected to Android: ${ANDROID_USER}@${ANDROID_HOST}:${ANDROID_PORT}`);
+    
+    // Test SSH connection
+    try {
+        const result = await serverManager.sshExec('echo "SSH OK"');
+        if (result.stdout.includes('SSH OK')) {
+            console.log(`✅ SSH connection to ${ANDROID_USER}@${ANDROID_HOST}:${ANDROID_PORT} - Working`);
+        }
+    } catch (error) {
+        console.error(`❌ SSH connection failed: ${error.message}`);
+        console.log(`   Make sure:`);
+        console.log(`   1. SSH server running on Android: sshd`);
+        console.log(`   2. Correct IP in .env: ANDROID_HOST=${ANDROID_HOST}`);
+        console.log(`   3. SSH key added or password auth enabled`);
+        console.log(`   4. Test manually: ssh -p ${ANDROID_PORT} ${ANDROID_USER}@${ANDROID_HOST}`);
+    }
 });
 
 server.on('upgrade', (request, socket, head) => {

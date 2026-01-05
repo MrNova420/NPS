@@ -24,36 +24,41 @@ NPS turns any Android device into a professional server platform with automatic 
 
 ## Quick Start
 
-### On Android (Termux)
+### Running on Android (Termux)
 
 ```bash
-pkg install git nodejs
+pkg install git nodejs openssh
 git clone https://github.com/MrNova420/NPS.git
 cd NPS
+sshd  # Start SSH server
 ./quick-start.sh
 ```
 
-### On PC (Linux/macOS)
+### Controlling Android from PC
 
 ```bash
+# On PC:
 git clone https://github.com/MrNova420/NPS.git
 cd NPS
-./quick-start.sh
+./setup-pc-to-phone.sh  # Interactive setup - asks for phone IP
+# Then: cd dashboard && npm start
 ```
 
-Access the dashboard at `http://localhost:3000`
+Access dashboard at `http://localhost:3000`
 
-### Manual Setup (if quick-start fails)
+### Manual PC Setup
 
 ```bash
-# 1. Fix dashboard issues (creates config, fixes paths)
-./fix-dashboard.sh
+# 1. Find phone IP (on Android): ifconfig
+# 2. Create dashboard/.env:
+cat > dashboard/.env << EOF
+ANDROID_HOST=192.168.1.50  # Your phone's IP
+ANDROID_PORT=8022
+ANDROID_USER=u0_a  # Run 'whoami' on Android
+EOF
 
-# 2. Verify everything works
-./test-dashboard.sh
-
-# 3. Start dashboard manually
-cd dashboard && npm start
+# 3. Start dashboard
+cd dashboard && npm install && npm start
 ```
 
 ## Server Templates

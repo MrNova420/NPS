@@ -270,6 +270,89 @@
             font-size: 0.85rem;
         }
         
+        /* Detailed Server View */
+        .server-detail {
+            background: var(--dark);
+            border-radius: 12px;
+            padding: 2rem;
+            margin-top: 2rem;
+        }
+
+        .detail-tabs {
+            display: flex;
+            gap: 1rem;
+            border-bottom: 2px solid var(--border);
+            margin-bottom: 2rem;
+        }
+
+        .detail-tab {
+            padding: 0.75rem 1.5rem;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+            transition: all 0.3s ease;
+        }
+
+        .detail-tab.active {
+            border-bottom-color: var(--primary);
+            color: var(--primary);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .config-section {
+            background: var(--darker);
+            padding: 1.5rem;
+            border-radius: 8px;
+            margin-bottom: 1.5rem;
+        }
+
+        .config-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1rem;
+        }
+
+        .terminal-output {
+            background: #000;
+            color: #0f0;
+            padding: 1rem;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .install-step {
+            padding: 1rem;
+            background: var(--darker);
+            border-radius: 8px;
+            margin-bottom: 0.5rem;
+            border-left: 3px solid var(--border);
+        }
+
+        .install-step.running {
+            border-left-color: var(--primary);
+            animation: pulse 1.5s infinite;
+        }
+
+        .install-step.completed {
+            border-left-color: var(--success);
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.8; }
+        }
+        
+        
         /* Modal */
         .modal {
             display: none;
@@ -631,10 +714,9 @@
                             `<button class="btn btn-secondary" onclick="controlServer('${s.id}', 'stop')">⏸ Stop</button>` :
                             `<button class="btn btn-success" onclick="controlServer('${s.id}', 'start')">▶ Start</button>`
                         }
-                        <button class="btn btn-secondary" onclick="controlServer('${s.id}', 'restart')">🔄 Restart</button>
-                        <button class="btn btn-secondary" onclick="showEditServer('${s.id}')">⚙️ Edit</button>
-                        <button class="btn btn-secondary" onclick="viewLogs('${s.id}')">📄 Logs</button>
-                        <button class="btn btn-danger" onclick="confirmDelete('${s.id}')">🗑 Delete</button>
+                        <button class="btn btn-secondary" onclick="controlServer('${s.id}', 'restart')">🔄</button>
+                        <button class="btn btn-primary" onclick="showServerDetails('${s.id}')">🔧 Manage</button>
+                        <button class="btn btn-danger" onclick="confirmDelete('${s.id}')">🗑</button>
                     </div>
                 </div>
             `).join('');
@@ -992,6 +1074,406 @@
             a.click();
             showNotification('Logs downloaded!', 'success');
         }
+
+        // Detailed Server Management
+        let currentDetailServer = null;
+
+        function showServerDetails(id) {
+            currentDetailServer = id;
+            const server = servers.find(s => s.id === id);
+            if (!server) return;
+
+            const modal = document.getElementById('detailModal');
+            if (!modal) {
+                const modalHTML = `
+                    <div class="modal" id="detailModal">
+                        <div class="modal-content" style="max-width: 1200px; max-height: 90vh; overflow-y: auto;">
+                            <div class="modal-header">
+                                <div class="modal-title">🔧 Manage Server - <span id="detailServerName"></span></div>
+                                <button class="close-btn" onclick="closeModal('detailModal')">&times;</button>
+                            </div>
+                            <div style="padding: 1.5rem;">
+                                <div class="detail-tabs">
+                                    <div class="detail-tab active" onclick="switchTab('overview')">📊 Overview</div>
+                                    <div class="detail-tab" onclick="switchTab('config')">⚙️ Configure</div>
+                                    <div class="detail-tab" onclick="switchTab('install')">📦 Dependencies</div>
+                                    <div class="detail-tab" onclick="switchTab('terminal')">💻 Terminal</div>
+                                    <div class="detail-tab" onclick="switchTab('logs')">📄 Logs</div>
+                                    <div class="detail-tab" onclick="switchTab('monitor')">📈 Monitoring</div>
+                                </div>
+
+                                <div id="tab-overview" class="tab-content active"></div>
+                                <div id="tab-config" class="tab-content"></div>
+                                <div id="tab-install" class="tab-content"></div>
+                                <div id="tab-terminal" class="tab-content"></div>
+                                <div id="tab-logs" class="tab-content"></div>
+                                <div id="tab-monitor" class="tab-content"></div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                document.body.insertAdjacentHTML('beforeend', modalHTML);
+            }
+
+            document.getElementById('detailServerName').textContent = server.name;
+            document.getElementById('detailModal').classList.add('active');
+            
+            // Load all tabs
+            loadOverviewTab(server);
+            loadConfigTab(server);
+            loadInstallTab(server);
+            loadTerminalTab(server);
+            loadLogsTab(server);
+            loadMonitorTab(server);
+        }
+
+        function switchTab(tabName) {
+            document.querySelectorAll('.detail-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            event.target.classList.add('active');
+            document.getElementById(`tab-${tabName}`).classList.add('active');
+        }
+
+        function loadOverviewTab(server) {
+            const html = `
+                <div class="config-section">
+                    <h3>Server Information</h3>
+                    <div class="config-grid">
+                        <div class="form-group">
+                            <label class="form-label">Name</label>
+                            <input type="text" class="form-input" value="${server.name}" onchange="updateServerField('${server.id}', 'name', this.value)">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Type</label>
+                            <input type="text" class="form-input" value="${server.type}" readonly>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Port</label>
+                            <input type="number" class="form-input" value="${server.port}" onchange="updateServerField('${server.id}', 'port', parseInt(this.value))">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Status</label>
+                            <input type="text" class="form-input" value="${server.status}" readonly style="color: ${server.status === 'running' ? 'var(--success)' : 'var(--warning)'}">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="config-section">
+                    <h3>Quick Actions</h3>
+                    <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+                        ${server.status === 'running' ?
+                            `<button class="btn btn-danger" onclick="controlServer('${server.id}', 'stop')">⏸ Stop Server</button>` :
+                            `<button class="btn btn-success" onclick="controlServer('${server.id}', 'start')">▶ Start Server</button>`
+                        }
+                        <button class="btn btn-secondary" onclick="controlServer('${server.id}', 'restart')">🔄 Restart</button>
+                        <button class="btn btn-secondary" onclick="openServerURL('${server.port}')">🌐 Open in Browser</button>
+                        <button class="btn btn-secondary" onclick="backupServer('${server.id}')">💾 Backup</button>
+                        <button class="btn btn-danger" onclick="confirmDelete('${server.id}')">🗑 Delete Server</button>
+                    </div>
+                </div>
+
+                <div class="config-section">
+                    <h3>Statistics</h3>
+                    <div class="config-grid">
+                        <div><strong>CPU:</strong> ${server.stats.cpu?.toFixed(1) || 0}%</div>
+                        <div><strong>Memory:</strong> ${server.stats.memory?.toFixed(1) || 0}%</div>
+                        <div><strong>Requests:</strong> ${server.stats.requests || 0}</div>
+                        <div><strong>Uptime:</strong> ${server.stats.uptime || '0'}</div>
+                        <div><strong>Created:</strong> ${new Date(server.created).toLocaleString()}</div>
+                    </div>
+                </div>
+            `;
+            document.getElementById('tab-overview').innerHTML = html;
+        }
+
+        function loadConfigTab(server) {
+            const html = `
+                <div class="config-section">
+                    <h3>Server Configuration</h3>
+                    <form onsubmit="saveServerConfig(event, '${server.id}')">
+                        <div class="config-grid">
+                            <div class="form-group">
+                                <label class="form-label">Memory Limit (MB)</label>
+                                <input type="number" name="memory_limit" class="form-input" value="${server.config?.memory_limit || 512}" min="128">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">CPU Limit (%)</label>
+                                <input type="number" name="cpu_limit" class="form-input" value="${server.config?.cpu_limit || 50}" min="1" max="100">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Max Connections</label>
+                                <input type="number" name="max_connections" class="form-input" value="${server.config?.max_connections || 100}">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Auto Restart</label>
+                                <select name="auto_restart" class="form-select">
+                                    <option value="true" ${server.config?.auto_restart ? 'selected' : ''}>Enabled</option>
+                                    <option value="false" ${!server.config?.auto_restart ? 'selected' : ''}>Disabled</option>
+                                </select>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary" style="margin-top: 1rem;">💾 Save Configuration</button>
+                    </form>
+                </div>
+
+                <div class="config-section">
+                    <h3>Environment Variables</h3>
+                    <div id="envVars-${server.id}">
+                        <button class="btn btn-secondary" onclick="addEnvVar('${server.id}')">➕ Add Variable</button>
+                    </div>
+                </div>
+
+                <div class="config-section">
+                    <h3>Advanced Settings</h3>
+                    <div class="form-group">
+                        <label class="form-label">Custom Start Command</label>
+                        <input type="text" class="form-input" placeholder="node server.js" value="${server.config?.start_command || ''}">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Working Directory</label>
+                        <input type="text" class="form-input" value="~/server/instances/${server.id}" readonly>
+                    </div>
+                </div>
+            `;
+            document.getElementById('tab-config').innerHTML = html;
+        }
+
+        function loadInstallTab(server) {
+            const html = `
+                <div class="config-section">
+                    <h3>Package Manager</h3>
+                    <div style="display: flex; gap: 1rem; margin-bottom: 1rem;">
+                        <button class="btn btn-primary" onclick="installPackage('${server.id}', 'npm')">📦 NPM Package</button>
+                        <button class="btn btn-primary" onclick="installPackage('${server.id}', 'pip')">🐍 Python Package</button>
+                        <button class="btn btn-primary" onclick="installPackage('${server.id}', 'apt')">📥 System Package</button>
+                    </div>
+                </div>
+
+                <div class="config-section">
+                    <h3>Installed Dependencies</h3>
+                    <div id="dependencies-${server.id}">
+                        <button class="btn btn-secondary" onclick="scanDependencies('${server.id}')">🔍 Scan Dependencies</button>
+                    </div>
+                </div>
+
+                <div class="config-section">
+                    <h3>Quick Install Templates</h3>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+                        <button class="btn btn-secondary" onclick="quickInstall('${server.id}', 'express')">Express.js</button>
+                        <button class="btn btn-secondary" onclick="quickInstall('${server.id}', 'react')">React</button>
+                        <button class="btn btn-secondary" onclick="quickInstall('${server.id}', 'flask')">Flask</button>
+                        <button class="btn btn-secondary" onclick="quickInstall('${server.id}', 'postgresql')">PostgreSQL</button>
+                        <button class="btn btn-secondary" onclick="quickInstall('${server.id}', 'redis')">Redis</button>
+                        <button class="btn btn-secondary" onclick="quickInstall('${server.id}', 'nginx')">Nginx</button>
+                    </div>
+                </div>
+            `;
+            document.getElementById('tab-install').innerHTML = html;
+        }
+
+        function loadTerminalTab(server) {
+            const html = `
+                <div class="config-section">
+                    <h3>Web Terminal</h3>
+                    <div class="terminal-output" id="terminal-${server.id}">
+$ Ready. Type commands or use buttons below.
+                    </div>
+                    <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
+                        <input type="text" id="terminal-input-${server.id}" class="form-input" placeholder="Enter command..." style="flex: 1;" onkeypress="if(event.key==='Enter') executeCommand('${server.id}')">
+                        <button class="btn btn-primary" onclick="executeCommand('${server.id}')">▶ Run</button>
+                    </div>
+                    <div style="margin-top: 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                        <button class="btn btn-secondary" onclick="quickCommand('${server.id}', 'ls -la')">📁 List Files</button>
+                        <button class="btn btn-secondary" onclick="quickCommand('${server.id}', 'pwd')">📍 Current Dir</button>
+                        <button class="btn btn-secondary" onclick="quickCommand('${server.id}', 'df -h')">💾 Disk Space</button>
+                        <button class="btn btn-secondary" onclick="quickCommand('${server.id}', 'free -m')">🧠 Memory</button>
+                        <button class="btn btn-secondary" onclick="quickCommand('${server.id}', 'top -bn1 | head -20')">📊 Processes</button>
+                        <button class="btn btn-danger" onclick="clearTerminal('${server.id}')">🗑 Clear</button>
+                    </div>
+                </div>
+            `;
+            document.getElementById('tab-terminal').innerHTML = html;
+        }
+
+        function loadLogsTab(server) {
+            const html = `
+                <div class="config-section">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                        <h3>Server Logs</h3>
+                        <div style="display: flex; gap: 0.5rem;">
+                            <button class="btn btn-secondary" onclick="refreshServerLogs('${server.id}')">🔄 Refresh</button>
+                            <button class="btn btn-secondary" onclick="downloadServerLogs('${server.id}')">⬇️ Download</button>
+                            <button class="btn btn-danger" onclick="clearServerLogs('${server.id}')">🗑 Clear</button>
+                        </div>
+                    </div>
+                    <div class="terminal-output" id="server-logs-${server.id}">Loading logs...</div>
+                </div>
+            `;
+            document.getElementById('tab-logs').innerHTML = html;
+            refreshServerLogs(server.id);
+        }
+
+        function loadMonitorTab(server) {
+            const html = `
+                <div class="config-section">
+                    <h3>Real-time Monitoring</h3>
+                    <div class="config-grid">
+                        <div>
+                            <div style="font-size: 2rem; color: var(--primary);" id="monitor-cpu-${server.id}">--</div>
+                            <div>CPU Usage</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 2rem; color: var(--success);" id="monitor-mem-${server.id}">--</div>
+                            <div>Memory Usage</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 2rem; color: var(--warning);" id="monitor-req-${server.id}">--</div>
+                            <div>Total Requests</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 2rem;" id="monitor-uptime-${server.id}">--</div>
+                            <div>Uptime</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="config-section">
+                    <h3>Performance Graph</h3>
+                    <canvas id="perfChart-${server.id}" style="width: 100%; height: 300px; background: var(--darker); border-radius: 8px;"></canvas>
+                </div>
+            `;
+            document.getElementById('tab-monitor').innerHTML = html;
+            startMonitoring(server.id);
+        }
+
+        // Helper functions for server management
+        async function updateServerField(id, field, value) {
+            try {
+                await fetch(`/api/servers/${id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ [field]: value })
+                });
+                showNotification('Updated!', 'success');
+                await loadServers();
+            } catch (error) {
+                showNotification('Update failed: ' + error.message, 'error');
+            }
+        }
+
+        async function saveServerConfig(event, id) {
+            event.preventDefault();
+            const formData = new FormData(event.target);
+            const config = Object.fromEntries(formData);
+            
+            try {
+                await fetch(`/api/servers/${id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ config })
+                });
+                showNotification('Configuration saved!', 'success');
+            } catch (error) {
+                showNotification('Failed to save: ' + error.message, 'error');
+            }
+        }
+
+        async function executeCommand(id) {
+            const input = document.getElementById(`terminal-input-${id}`);
+            const terminal = document.getElementById(`terminal-${id}`);
+            const command = input.value;
+            
+            if (!command) return;
+            
+            terminal.textContent += `\n$ ${command}\n`;
+            input.value = '';
+            
+            try {
+                const response = await fetch('/api/system/execute', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ command: `cd ~/server/instances/${id} && ${command}` })
+                });
+                const { stdout, stderr } = await response.json();
+                terminal.textContent += stdout || stderr || 'Command executed.\n';
+                terminal.scrollTop = terminal.scrollHeight;
+            } catch (error) {
+                terminal.textContent += `Error: ${error.message}\n`;
+            }
+        }
+
+        function quickCommand(id, cmd) {
+            document.getElementById(`terminal-input-${id}`).value = cmd;
+            executeCommand(id);
+        }
+
+        function clearTerminal(id) {
+            document.getElementById(`terminal-${id}`).textContent = '$ Terminal cleared.\n';
+        }
+
+        async function refreshServerLogs(id) {
+            try {
+                const response = await fetch(`/api/servers/${id}/logs`);
+                const { logs } = await response.json();
+                document.getElementById(`server-logs-${id}`).textContent = logs || 'No logs available';
+            } catch (error) {
+                document.getElementById(`server-logs-${id}`).textContent = 'Failed to load logs';
+            }
+        }
+
+        function downloadServerLogs(id) {
+            const logs = document.getElementById(`server-logs-${id}`).textContent;
+            const server = servers.find(s => s.id === id);
+            const blob = new Blob([logs], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${server.name}-logs-${Date.now()}.txt`;
+            a.click();
+        }
+
+        async function installPackage(id, type) {
+            const pkg = prompt(`Enter ${type} package name:`);
+            if (!pkg) return;
+            
+            const commands = {
+                npm: `cd ~/server/instances/${id} && npm install ${pkg}`,
+                pip: `pip install ${pkg}`,
+                apt: `pkg install ${pkg}`
+            };
+            
+            await executeCommand(id);
+            document.getElementById(`terminal-input-${id}`).value = commands[type];
+            await executeCommand(id);
+        }
+
+        async function quickInstall(id, framework) {
+            showNotification(`Installing ${framework}...`, 'success');
+            // Implementation for quick installs
+        }
+
+        function openServerURL(port) {
+            window.open(`http://localhost:${port}`, '_blank');
+        }
+
+        async function backupServer(id) {
+            showNotification('Creating backup...', 'success');
+            // Implementation for backup
+        }
+
+        function startMonitoring(id) {
+            // Update monitoring stats every 2 seconds
+            setInterval(() => {
+                const server = servers.find(s => s.id === id);
+                if (server) {
+                    document.getElementById(`monitor-cpu-${id}`).textContent = (server.stats.cpu?.toFixed(1) || 0) + '%';
+                    document.getElementById(`monitor-mem-${id}`).textContent = (server.stats.memory?.toFixed(1) || 0) + '%';
+                    document.getElementById(`monitor-req-${id}`).textContent = server.stats.requests || 0;
+                    document.getElementById(`monitor-uptime-${id}`).textContent = server.stats.uptime || '0';
+                }
+            }, 2000);
+        }
+
 
         // Update modal close to accept ID
         function closeModal(id) {

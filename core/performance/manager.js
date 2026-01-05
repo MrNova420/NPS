@@ -32,9 +32,10 @@ class PerformanceManager {
             this.config = await this.createDefaultConfig();
         }
 
-        // Start monitoring
+        // Start monitoring ONLY (no auto-optimization to prevent feedback loop)
         this.startMonitoring();
-        this.startOptimization();
+        // Auto-optimization disabled - can be manually triggered via API
+        console.log('Performance monitoring active. Auto-optimization disabled (use API to trigger manually).');
     }
 
     async createDefaultConfig() {
@@ -103,11 +104,11 @@ class PerformanceManager {
     startMonitoring() {
         setInterval(() => {
             this.collectMetrics();
-        }, 5000); // Every 5 seconds
+        }, 15000); // Every 15 seconds (reduced frequency to avoid overhead)
 
         setInterval(() => {
             this.analyzeMetrics();
-        }, 30000); // Every 30 seconds
+        }, 60000); // Every 60 seconds
     }
 
     startOptimization() {
@@ -250,15 +251,15 @@ class PerformanceManager {
     checkThresholds(metrics) {
         const alerts = [];
 
-        // CPU threshold
-        if (metrics.cpu > 90) {
+        // CPU threshold (increased to prevent false positives on mobile)
+        if (metrics.cpu > 98) {
             alerts.push({
                 level: 'critical',
                 type: 'cpu',
                 message: `High CPU usage: ${metrics.cpu}%`,
                 value: metrics.cpu
             });
-        } else if (metrics.cpu > 75) {
+        } else if (metrics.cpu > 85) {
             alerts.push({
                 level: 'warning',
                 type: 'cpu',
@@ -329,20 +330,9 @@ class PerformanceManager {
     handleCriticalAlert(alert) {
         console.log(`CRITICAL ALERT: ${alert.message}`);
         
-        switch (alert.type) {
-            case 'cpu':
-                this.reduceCPULoad();
-                break;
-            case 'memory':
-                this.freeMemory();
-                break;
-            case 'disk':
-                this.cleanupDisk();
-                break;
-            case 'thermal':
-                this.thermalThrottle();
-                break;
-        }
+        // Log alert but DO NOT auto-trigger optimization (prevents feedback loop)
+        // Optimization should be manually triggered via API or CLI
+        console.log('  → Manual intervention recommended. Use: npm run optimize');
     }
 
     reduceCPULoad() {

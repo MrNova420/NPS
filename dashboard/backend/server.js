@@ -40,6 +40,15 @@ class ServerManager {
         this.loadServers();
     }
 
+    // Helper to load template from either basic or advanced directory
+    loadTemplate(type) {
+        try {
+            return require(path.join(__dirname, '../../server-templates', `${type}.js`));
+        } catch (e) {
+            return require(path.join(__dirname, '../../server-templates/advanced', `${type}.js`));
+        }
+    }
+
     async loadServers() {
         try {
             const servers = stateManager.getServers();
@@ -82,7 +91,7 @@ class ServerManager {
     }
 
     async deployServer(server) {
-        const template = require(`../server-templates/${server.type}.js`);
+        const template = this.loadTemplate(server.type);
         
         try {
             server.status = 'deploying';
@@ -107,7 +116,7 @@ class ServerManager {
         const server = this.servers.get(serverId);
         if (!server) throw new Error('Server not found');
 
-        const template = require(`../server-templates/${server.type}.js`);
+        const template = this.loadTemplate(server.type);
         await template.stop(server, this.sshExec.bind(this));
 
         server.status = 'stopped';
@@ -119,7 +128,7 @@ class ServerManager {
         const server = this.servers.get(serverId);
         if (!server) throw new Error('Server not found');
 
-        const template = require(`../server-templates/${server.type}.js`);
+        const template = this.loadTemplate(server.type);
         await template.start(server, this.sshExec.bind(this));
 
         server.status = 'running';
@@ -136,7 +145,7 @@ class ServerManager {
             await this.stopServer(serverId);
         }
 
-        const template = require(`../server-templates/${server.type}.js`);
+        const template = this.loadTemplate(server.type);
         await template.delete(server, this.sshExec.bind(this));
 
         this.servers.delete(serverId);
@@ -188,7 +197,7 @@ class ServerManager {
 
     sshExec(command) {
         return new Promise((resolve, reject) => {
-            const sshCmd = `ssh -p ${ANDROID_PORT} ${ANDROID_USER}@${ANDROID_HOST} "${command}"`;
+            const sshCmd = `ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 -p ${ANDROID_PORT} ${ANDROID_USER}@${ANDROID_HOST} "${command}"`;
             exec(sshCmd, (error, stdout, stderr) => {
                 if (error) reject(error);
                 else resolve({ stdout, stderr });
@@ -234,30 +243,53 @@ app.get('/api/servers', (req, res) => {
 // Get server templates
 app.get('/api/templates', async (req, res) => {
     try {
-        const templatesDir = path.join(__dirname, '../server-templates');
-        const files = await fs.readdir(templatesDir);
-        const templates = files
+        const templatesDir = path.join(__dirname, '../../server-templates');
+        const advancedDir = path.join(templatesDir, 'advanced');
+        
+        // Load basic templates
+        const basicFiles = await fs.readdir(templatesDir);
+        const basicTemplates = basicFiles
             .filter(f => f.endsWith('.js'))
-            .map(f => f.replace('.js', ''));
+            .map(f => ({ name: f.replace('.js', ''), path: templatesDir }));
+        
+        // Load advanced templates
+        let advancedTemplates = [];
+        try {
+            const advancedFiles = await fs.readdir(advancedDir);
+            advancedTemplates = advancedFiles
+                .filter(f => f.endsWith('.js'))
+                .map(f => ({ name: f.replace('.js', ''), path: advancedDir }));
+        } catch (e) {
+            console.log('No advanced templates directory found');
+        }
+        
+        // Combine all templates
+        const allTemplates = [...basicTemplates, ...advancedTemplates];
         
         const details = await Promise.all(
-            templates.map(async (name) => {
-                const template = require(`../server-templates/${name}.js`);
-                return {
-                    id: name,
-                    name: template.name,
-                    description: template.description,
-                    category: template.category,
-                    icon: template.icon,
-                    defaultPort: template.defaultPort,
-                    requirements: template.requirements,
-                    configOptions: template.configOptions || []
-                };
+            allTemplates.map(async ({ name, path: templatePath }) => {
+                try {
+                    const template = require(path.join(templatePath, `${name}.js`));
+                    return {
+                        id: name,
+                        name: template.name || name,
+                        description: template.description || 'No description',
+                        category: template.category || 'basic',
+                        icon: template.icon || '📦',
+                        defaultPort: template.defaultPort || 8000,
+                        requirements: template.requirements || [],
+                        configOptions: template.configOptions || []
+                    };
+                } catch (err) {
+                    console.error(`Failed to load template ${name}:`, err.message);
+                    return null;
+                }
             })
         );
         
-        res.json(details);
+        res.json(details.filter(d => d !== null));
     } catch (error) {
+        console.error('Template loading error:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -322,14 +354,19 @@ app.get('/api/servers/:id/logs', async (req, res) => {
 // System stats
 app.get('/api/system/stats', async (req, res) => {
     try {
-        const { stdout } = await serverManager.sshExec(`
-            echo "CPU: $(top -bn1 | grep 'CPU:' | head -1)" && \
-            echo "MEM: $(free -m | grep Mem)" && \
-            echo "DISK: $(df -h $HOME | tail -1)"
-        `);
-        
-        res.json({ stats: stdout });
+        // Use PerformanceManager metrics instead of SSH (avoids blocking)
+        const metrics = await perfManager.getMetrics();
+        res.json({ 
+            stats: {
+                cpu: metrics.cpu,
+                memory: metrics.memory,
+                disk: metrics.disk,
+                temperature: metrics.temperature,
+                timestamp: metrics.timestamp
+            }
+        });
     } catch (error) {
+        console.error('Stats error:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -347,9 +384,15 @@ app.get('/api/system/performance', (req, res) => {
 // Optimization endpoint
 app.post('/api/system/optimize', async (req, res) => {
     try {
-        await serverManager.sshExec('bash ~/server/core/performance/optimize.sh');
-        res.json({ success: true, message: 'System optimization initiated' });
+        // Trigger manual optimization via PerformanceManager
+        if (perfManager.autoOptimize) {
+            await perfManager.autoOptimize();
+            res.json({ success: true, message: 'System optimization completed' });
+        } else {
+            res.json({ success: false, message: 'Optimization not available' });
+        }
     } catch (error) {
+        console.error('Optimization error:', error);
         res.status(500).json({ error: error.message });
     }
 });

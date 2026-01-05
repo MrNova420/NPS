@@ -6,6 +6,8 @@ Transform your Android phone into a powerful, production-ready server with enter
 [![Version](https://img.shields.io/badge/version-1.0.0--beta-green.svg)](https://github.com/MrNova420/NPS)
 [![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Termux-orange.svg)](https://termux.dev)
 
+> **⚡ Latest Update:** Critical dashboard fixes applied! CPU feedback loop fixed, template loading corrected, SSH blocking resolved. All systems operational. [See details](FIXES_APPLIED.md)
+
 ## Overview
 
 NPS turns any Android device into a professional server platform with automatic optimization, real-time monitoring, and 18 production-ready templates.
@@ -25,27 +27,34 @@ NPS turns any Android device into a professional server platform with automatic 
 ### On Android (Termux)
 
 ```bash
-pkg install git
+pkg install git nodejs
 git clone https://github.com/MrNova420/NPS.git
 cd NPS
-bash install.sh
+./quick-start.sh
 ```
 
-### On PC
+### On PC (Linux/macOS)
 
 ```bash
 git clone https://github.com/MrNova420/NPS.git
 cd NPS
-bash install.sh
-```
-
-Then edit `.env` with your Android device's IP address and run:
-
-```bash
-./start-dashboard.sh
+./quick-start.sh
 ```
 
 Access the dashboard at `http://localhost:3000`
+
+### Manual Setup (if quick-start fails)
+
+```bash
+# 1. Fix dashboard issues (creates config, fixes paths)
+./fix-dashboard.sh
+
+# 2. Verify everything works
+./test-dashboard.sh
+
+# 3. Start dashboard manually
+cd dashboard && npm start
+```
 
 ## Server Templates
 

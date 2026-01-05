@@ -516,17 +516,34 @@
 
         // Load templates
         async function loadTemplates() {
-            const response = await fetch('/api/templates');
-            templates = await response.json();
-            renderTemplates();
-            
-            const select = document.getElementById('templateType');
-            templates.forEach(t => {
-                const option = document.createElement('option');
-                option.value = t.id;
-                option.textContent = `${t.icon} ${t.name}`;
-                select.appendChild(option);
-            });
+            try {
+                const response = await fetch('/api/templates');
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                templates = await response.json();
+                console.log(`Loaded ${templates.length} templates:`, templates.map(t => t.name).join(', '));
+                renderTemplates();
+                
+                const select = document.getElementById('templateType');
+                select.innerHTML = '<option value="">Select a template...</option>';
+                templates.forEach(t => {
+                    const option = document.createElement('option');
+                    option.value = t.id;
+                    option.textContent = `${t.icon} ${t.name}`;
+                    select.appendChild(option);
+                });
+            } catch (error) {
+                console.error('Failed to load templates:', error);
+                const grid = document.getElementById('templatesGrid');
+                grid.innerHTML = `
+                    <div style="grid-column: 1/-1; padding: 2rem; text-align: center; color: #e74c3c;">
+                        <h3>⚠️ Failed to Load Templates</h3>
+                        <p>${error.message}</p>
+                        <p style="opacity: 0.7; font-size: 0.9rem;">Check console for details</p>
+                    </div>
+                `;
+            }
         }
 
         function renderTemplates() {
@@ -543,10 +560,19 @@
 
         // Load servers
         async function loadServers() {
-            const response = await fetch('/api/servers');
-            servers = await response.json();
-            renderServers();
-            document.getElementById('server-count').textContent = servers.length;
+            try {
+                const response = await fetch('/api/servers');
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                servers = await response.json();
+                renderServers();
+                document.getElementById('server-count').textContent = servers.length;
+            } catch (error) {
+                console.error('Failed to load servers:', error);
+                const grid = document.getElementById('serversGrid');
+                grid.innerHTML = '<p style="grid-column: 1/-1; text-align: center; color: #e74c3c;">⚠️ Failed to load servers</p>';
+            }
         }
 
         function renderServers() {

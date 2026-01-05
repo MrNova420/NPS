@@ -39,22 +39,40 @@ if (!process.env.ANDROID_HOST && !isTermux) {
 // Initialize Enterprise Managers
 const stateManager = new StateManager();
 const perfManager = new PerformanceManager();
-const authManager = new AuthManager();
-const monitoringManager = new MonitoringManager();
-const backupManager = new BackupManager();
+let authManager, monitoringManager, backupManager;
 
-// Initialize all managers
+// Try to initialize enterprise features (optional)
+try {
+    authManager = new AuthManager();
+    monitoringManager = new MonitoringManager();
+    backupManager = new BackupManager();
+} catch (error) {
+    console.log('⚠️  Enterprise features disabled (modules not found)');
+    console.log('   Basic functionality will work');
+}
+
+// Initialize core managers
 Promise.all([
-    stateManager.initialize(),
-    perfManager.initialize(),
-    authManager.initialize(),
-    monitoringManager.initialize(),
-    backupManager.initialize()
+    stateManager.initialize().catch(err => console.error('State Manager failed:', err.message)),
+    perfManager.initialize().catch(err => console.error('Performance Manager failed:', err.message))
 ]).then(() => {
-    console.log('✅ All enterprise managers initialized');
+    console.log('✅ Core managers initialized');
 }).catch(error => {
-    console.error('❌ Initialization failed:', error);
+    console.error('❌ Core initialization failed:', error);
 });
+
+// Initialize enterprise managers (if available)
+if (authManager && monitoringManager && backupManager) {
+    Promise.all([
+        authManager.initialize().catch(err => console.log('Auth disabled:', err.message)),
+        monitoringManager.initialize().catch(err => console.log('Monitoring disabled:', err.message)),
+        backupManager.initialize().catch(err => console.log('Backup disabled:', err.message))
+    ]).then(() => {
+        console.log('✅ Enterprise managers initialized');
+    }).catch(error => {
+        console.log('⚠️  Some enterprise features unavailable');
+    });
+}
 
 // Middleware
 app.use(express.json());
@@ -475,6 +493,7 @@ app.post('/api/system/execute', async (req, res) => {
 
 // Authentication
 app.post('/api/auth/login', async (req, res) => {
+    if (!authManager) return res.status(503).json({ error: 'Authentication not available' });
     try {
         const { username, password, mfaCode } = req.body;
         const session = await authManager.login(username, password, mfaCode);
@@ -485,6 +504,7 @@ app.post('/api/auth/login', async (req, res) => {
 });
 
 app.post('/api/auth/logout', async (req, res) => {
+    if (!authManager) return res.status(503).json({ error: 'Authentication not available' });
     try {
         const { sessionId } = req.body;
         await authManager.logout(sessionId);
@@ -495,6 +515,7 @@ app.post('/api/auth/logout', async (req, res) => {
 });
 
 app.post('/api/auth/change-password', async (req, res) => {
+    if (!authManager) return res.status(503).json({ error: 'Authentication not available' });
     try {
         const { username, oldPassword, newPassword } = req.body;
         await authManager.changePassword(username, oldPassword, newPassword);
@@ -505,10 +526,12 @@ app.post('/api/auth/change-password', async (req, res) => {
 });
 
 app.get('/api/auth/status', (req, res) => {
-    res.json(authManager.getSecurityStatus());
+    if (!authManager) return res.json({ enabled: false });
+    res.json({ enabled: true, ...authManager.getSecurityStatus() });
 });
 
 app.get('/api/auth/audit', async (req, res) => {
+    if (!authManager) return res.status(503).json({ error: 'Authentication not available' });
     try {
         const logs = await authManager.getAuditLog(req.query);
         res.json(logs);
@@ -519,10 +542,12 @@ app.get('/api/auth/audit', async (req, res) => {
 
 // Monitoring & Alerts
 app.get('/api/monitoring/status', (req, res) => {
+    if (!monitoringManager) return res.json({ enabled: false });
     res.json(monitoringManager.getStatus());
 });
 
 app.get('/api/monitoring/metrics', (req, res) => {
+    if (!monitoringManager) return res.status(503).json({ error: 'Monitoring not available' });
     const { from, to } = req.query;
     const metrics = monitoringManager.getMetrics(
         from ? parseInt(from) : Date.now() - 3600000,
@@ -532,11 +557,13 @@ app.get('/api/monitoring/metrics', (req, res) => {
 });
 
 app.get('/api/monitoring/alerts', (req, res) => {
+    if (!monitoringManager) return res.json([]);
     const alerts = monitoringManager.getAlerts(req.query);
     res.json(alerts);
 });
 
 app.post('/api/monitoring/alerts/:id/acknowledge', (req, res) => {
+    if (!monitoringManager) return res.status(503).json({ error: 'Monitoring not available' });
     const { id } = req.params;
     monitoringManager.acknowledgeAlert(parseFloat(id));
     res.json({ success: true });
@@ -544,6 +571,7 @@ app.post('/api/monitoring/alerts/:id/acknowledge', (req, res) => {
 
 // Backup & Recovery
 app.post('/api/backup/create', async (req, res) => {
+    if (!backupManager) return res.status(503).json({ error: 'Backup not available' });
     try {
         const { type, targets } = req.body;
         const backup = await backupManager.createBackup(type, targets);
@@ -554,11 +582,13 @@ app.post('/api/backup/create', async (req, res) => {
 });
 
 app.get('/api/backup/list', (req, res) => {
+    if (!backupManager) return res.json([]);
     const backups = backupManager.getBackups(req.query);
     res.json(backups);
 });
 
 app.post('/api/backup/restore/:id', async (req, res) => {
+    if (!backupManager) return res.status(503).json({ error: 'Backup not available' });
     try {
         const { id } = req.params;
         const result = await backupManager.restoreBackup(id, req.body);
@@ -569,6 +599,7 @@ app.post('/api/backup/restore/:id', async (req, res) => {
 });
 
 app.get('/api/backup/status', (req, res) => {
+    if (!backupManager) return res.json({ enabled: false });
     res.json(backupManager.getStatus());
 });
 
@@ -578,15 +609,20 @@ app.get('/api/enterprise/dashboard', async (req, res) => {
         const dashboard = {
             timestamp: Date.now(),
             uptime: process.uptime(),
-            system: monitoringManager.getStatus(),
-            security: authManager.getSecurityStatus(),
-            backup: backupManager.getStatus(),
+            system: monitoringManager ? monitoringManager.getStatus() : { enabled: false },
+            security: authManager ? authManager.getSecurityStatus() : { enabled: false },
+            backup: backupManager ? backupManager.getStatus() : { enabled: false },
             servers: {
                 total: serverManager.servers.size,
                 running: Array.from(serverManager.servers.values()).filter(s => s.status === 'running').length,
                 stopped: Array.from(serverManager.servers.values()).filter(s => s.status === 'stopped').length
             },
-            performance: perfManager.getPerformanceReport ? await perfManager.getPerformanceReport() : {}
+            performance: perfManager.getPerformanceReport ? await perfManager.getPerformanceReport() : {},
+            features: {
+                auth: !!authManager,
+                monitoring: !!monitoringManager,
+                backup: !!backupManager
+            }
         };
         res.json(dashboard);
     } catch (error) {
@@ -636,22 +672,26 @@ wss.on('connection', (ws) => {
     ws.send(JSON.stringify({ type: 'connected', message: 'WebSocket connected' }));
     
     // Send initial system stats
-    perfManager.getMetrics().then(metrics => {
-        ws.send(JSON.stringify({ 
-            type: 'system_stats', 
-            stats: {
-                cpu: metrics.cpu,
-                memory: metrics.memory,
-                disk: metrics.disk,
-                temperature: metrics.temperature,
-                timestamp: metrics.timestamp
-            }
-        }));
-    }).catch(console.error);
+    if (perfManager && perfManager.getMetrics) {
+        perfManager.getMetrics().then(metrics => {
+            ws.send(JSON.stringify({ 
+                type: 'system_stats', 
+                stats: {
+                    cpu: metrics.cpu,
+                    memory: metrics.memory,
+                    disk: metrics.disk,
+                    temperature: metrics.temperature,
+                    timestamp: metrics.timestamp
+                }
+            }));
+        }).catch(console.error);
+    }
 });
 
 // Broadcast system stats to all clients every 5 seconds
 setInterval(async () => {
+    if (!perfManager || !perfManager.getMetrics) return;
+    
     try {
         const metrics = await perfManager.getMetrics();
         const statsUpdate = {

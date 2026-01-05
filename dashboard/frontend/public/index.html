@@ -481,9 +481,8 @@
         async function init() {
             await loadTemplates();
             await loadServers();
-            await updateSystemStats();
-            connectWebSocket();
-            setInterval(updateSystemStats, 5000);
+            await updateSystemStats(); // Initial load
+            connectWebSocket(); // WebSocket will handle live updates
         }
 
         // WebSocket connection
@@ -510,6 +509,9 @@
                     break;
                 case 'server_deleted':
                     removeServerCard(data.serverId);
+                    break;
+                case 'system_stats':
+                    updateSystemStatsLive(data.stats);
                     break;
             }
         }
@@ -706,24 +708,37 @@
                 const response = await fetch('/api/system/stats');
                 const { stats } = await response.json();
                 
-                const lines = stats.split('\n');
-                lines.forEach(line => {
-                    if (line.includes('CPU:')) {
-                        const match = line.match(/(\d+)%/);
-                        if (match) document.getElementById('cpu-usage').textContent = match[1] + '%';
-                    } else if (line.includes('MEM:')) {
-                        const parts = line.split(/\s+/);
-                        const used = parseInt(parts[2]);
-                        const total = parseInt(parts[1]);
-                        const percent = ((used / total) * 100).toFixed(1);
-                        document.getElementById('mem-usage').textContent = percent + '%';
-                    } else if (line.includes('DISK:')) {
-                        const match = line.match(/(\d+)%/);
-                        if (match) document.getElementById('disk-usage').textContent = match[1] + '%';
-                    }
-                });
+                // Update CPU
+                if (stats.cpu !== undefined) {
+                    document.getElementById('cpu-usage').textContent = Math.round(stats.cpu) + '%';
+                }
+                
+                // Update Memory
+                if (stats.memory && stats.memory.percentage !== undefined) {
+                    document.getElementById('mem-usage').textContent = Math.round(stats.memory.percentage) + '%';
+                }
+                
+                // Update Disk
+                if (stats.disk && stats.disk.percentage !== undefined) {
+                    document.getElementById('disk-usage').textContent = Math.round(stats.disk.percentage) + '%';
+                }
             } catch (error) {
                 console.error('Failed to update stats:', error);
+            }
+        }
+
+        // Handle real-time system stats from WebSocket
+        function updateSystemStatsLive(stats) {
+            if (stats.cpu !== undefined) {
+                document.getElementById('cpu-usage').textContent = Math.round(stats.cpu) + '%';
+            }
+            
+            if (stats.memory && stats.memory.percentage !== undefined) {
+                document.getElementById('mem-usage').textContent = Math.round(stats.memory.percentage) + '%';
+            }
+            
+            if (stats.disk && stats.disk.percentage !== undefined) {
+                document.getElementById('disk-usage').textContent = Math.round(stats.disk.percentage) + '%';
             }
         }
 

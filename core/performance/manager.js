@@ -32,10 +32,9 @@ class PerformanceManager {
             this.config = await this.createDefaultConfig();
         }
 
-        // Start monitoring ONLY (no auto-optimization to prevent feedback loop)
+        // Start monitoring and optimization
         this.startMonitoring();
-        // Auto-optimization disabled - can be manually triggered via API
-        console.log('Performance monitoring active. Auto-optimization disabled (use API to trigger manually).');
+        this.startOptimization();
     }
 
     async createDefaultConfig() {
@@ -104,11 +103,11 @@ class PerformanceManager {
     startMonitoring() {
         setInterval(() => {
             this.collectMetrics();
-        }, 15000); // Every 15 seconds (reduced frequency to avoid overhead)
+        }, 5000); // Every 5 seconds
 
         setInterval(() => {
             this.analyzeMetrics();
-        }, 60000); // Every 60 seconds
+        }, 30000); // Every 30 seconds
     }
 
     startOptimization() {
@@ -330,9 +329,20 @@ class PerformanceManager {
     handleCriticalAlert(alert) {
         console.log(`CRITICAL ALERT: ${alert.message}`);
         
-        // Log alert but DO NOT auto-trigger optimization (prevents feedback loop)
-        // Optimization should be manually triggered via API or CLI
-        console.log('  → Manual intervention recommended. Use: npm run optimize');
+        switch (alert.type) {
+            case 'cpu':
+                this.reduceCPULoad();
+                break;
+            case 'memory':
+                this.freeMemory();
+                break;
+            case 'disk':
+                this.cleanupDisk();
+                break;
+            case 'thermal':
+                this.thermalThrottle();
+                break;
+        }
     }
 
     reduceCPULoad() {

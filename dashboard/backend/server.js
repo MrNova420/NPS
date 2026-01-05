@@ -428,9 +428,48 @@ server.on('upgrade', (request, socket, head) => {
 wss.on('connection', (ws) => {
     console.log('Client connected via WebSocket');
     ws.send(JSON.stringify({ type: 'connected', message: 'WebSocket connected' }));
+    
+    // Send initial system stats
+    perfManager.getMetrics().then(metrics => {
+        ws.send(JSON.stringify({ 
+            type: 'system_stats', 
+            stats: {
+                cpu: metrics.cpu,
+                memory: metrics.memory,
+                disk: metrics.disk,
+                temperature: metrics.temperature,
+                timestamp: metrics.timestamp
+            }
+        }));
+    }).catch(console.error);
 });
 
-// Update stats every 5 seconds
+// Broadcast system stats to all clients every 5 seconds
+setInterval(async () => {
+    try {
+        const metrics = await perfManager.getMetrics();
+        const statsUpdate = {
+            type: 'system_stats',
+            stats: {
+                cpu: metrics.cpu,
+                memory: metrics.memory,
+                disk: metrics.disk,
+                temperature: metrics.temperature,
+                timestamp: metrics.timestamp
+            }
+        };
+        
+        wss.clients.forEach(client => {
+            if (client.readyState === WebSocket.OPEN) {
+                client.send(JSON.stringify(statsUpdate));
+            }
+        });
+    } catch (error) {
+        console.error('Failed to broadcast system stats:', error);
+    }
+}, 5000);
+
+// Update server stats every 5 seconds
 setInterval(() => {
     serverManager.updateServerStats();
 }, 5000);

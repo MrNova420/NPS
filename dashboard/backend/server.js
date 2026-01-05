@@ -20,6 +20,10 @@ const ProcessManager = require('../../core/process-manager');
 const ResourceAllocator = require('../../core/resource-allocator');
 const ThermalManager = require('../../core/thermal-manager');
 const NetworkManager = require('../../core/network-manager');
+const HealthCheckSystem = require('../../core/health-check-system');
+const AutoRecoverySystem = require('../../core/auto-recovery-system');
+const ServiceDiscovery = require('../../core/service-discovery');
+const CleanupSystem = require('../../core/cleanup-system');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -47,7 +51,10 @@ const processManager = new ProcessManager();
 const resourceAllocator = new ResourceAllocator();
 const thermalManager = new ThermalManager();
 const networkManager = new NetworkManager();
-let authManager, monitoringManager, backupManager;
+const healthCheckSystem = new HealthCheckSystem();
+const serviceDiscovery = new ServiceDiscovery();
+const cleanupSystem = new CleanupSystem();
+let authManager, monitoringManager, backupManager, autoRecoverySystem;
 
 // Try to initialize enterprise features (optional)
 try {
@@ -66,9 +73,19 @@ Promise.all([
     processManager.initialize().catch(err => console.error('Process Manager failed:', err.message)),
     resourceAllocator.initialize().catch(err => console.error('Resource Allocator failed:', err.message)),
     thermalManager.initialize().catch(err => console.error('Thermal Manager failed:', err.message)),
-    networkManager.initialize().catch(err => console.error('Network Manager failed:', err.message))
+    networkManager.initialize().catch(err => console.error('Network Manager failed:', err.message)),
+    healthCheckSystem.initialize().catch(err => console.error('Health Check System failed:', err.message)),
+    serviceDiscovery.initialize().catch(err => console.error('Service Discovery failed:', err.message)),
+    cleanupSystem.initialize().catch(err => console.error('Cleanup System failed:', err.message))
 ]).then(() => {
     console.log('✅ Core managers initialized');
+    
+    // Initialize auto-recovery after health check system is ready
+    const AutoRecoverySystem = require('../../core/auto-recovery-system');
+    autoRecoverySystem = new AutoRecoverySystem(healthCheckSystem, serverManager);
+    return autoRecoverySystem.initialize();
+}).then(() => {
+    console.log('✅ Auto-recovery system initialized');
 }).catch(error => {
     console.error('❌ Core initialization failed:', error);
 });
@@ -217,6 +234,9 @@ class ServerManager {
             server.stats.startTime = Date.now();
             await this.saveServers();
             
+            // Register with health check system
+            healthCheckSystem.register(server);
+            
             this.broadcast({ type: 'server_update', server });
             console.log(`✅ Server ${server.name} deployed successfully`);
         } catch (error) {
@@ -276,6 +296,9 @@ class ServerManager {
         if (server.resources?.bandwidth) {
             networkManager.releaseBandwidth(serverId);
         }
+
+        // Unregister from health checks
+        healthCheckSystem.unregister(serverId);
 
         this.servers.delete(serverId);
         await this.saveServers();
@@ -628,7 +651,11 @@ app.get('/api/system/health', async (req, res) => {
                 process: processManager ? 'active' : 'inactive',
                 resource: resourceAllocator ? 'active' : 'inactive',
                 thermal: thermalManager ? 'active' : 'inactive',
-                network: networkManager ? 'active' : 'inactive'
+                network: networkManager ? 'active' : 'inactive',
+                healthCheck: healthCheckSystem ? 'active' : 'inactive',
+                autoRecovery: autoRecoverySystem ? 'active' : 'inactive',
+                discovery: serviceDiscovery ? 'active' : 'inactive',
+                cleanup: cleanupSystem ? 'active' : 'inactive'
             },
             thermal: thermalManager.getState(),
             resources: resourceAllocator.getUtilization(),
@@ -643,6 +670,204 @@ app.get('/api/system/health', async (req, res) => {
         }
         
         res.json(health);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Service Discovery - Scan system
+app.get('/api/discovery/scan', async (req, res) => {
+    try {
+        const services = await serviceDiscovery.scanSystem();
+        const summary = await serviceDiscovery.getSystemSummary();
+        res.json({ services, summary });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Service Discovery - Check port
+app.get('/api/discovery/port/:port', async (req, res) => {
+    try {
+        const port = parseInt(req.params.port);
+        const info = await serviceDiscovery.getPortInfo(port);
+        res.json(info);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Service Discovery - Find available port
+app.get('/api/discovery/port/available/:start?/:end?', async (req, res) => {
+    try {
+        const start = parseInt(req.params.start) || 8000;
+        const end = parseInt(req.params.end) || 9000;
+        const port = await serviceDiscovery.findAvailablePort(start, end);
+        res.json({ port, available: true });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Service Discovery - Get process details
+app.get('/api/discovery/process/:pid', async (req, res) => {
+    try {
+        const pid = parseInt(req.params.pid);
+        const details = await serviceDiscovery.getProcessDetails(pid);
+        res.json(details || { error: 'Process not found' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Service Discovery - Import service
+app.post('/api/discovery/import', async (req, res) => {
+    try {
+        const serviceInfo = req.body;
+        const server = await serviceDiscovery.importService(serviceInfo);
+        
+        // Add to server manager
+        serverManager.servers.set(server.id, server);
+        await serverManager.saveServers();
+        
+        // Register for health checks
+        healthCheckSystem.register(server);
+        
+        res.json({ success: true, server });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Cleanup - Get report
+app.get('/api/cleanup/report', async (req, res) => {
+    try {
+        const report = await cleanupSystem.getCleanupReport();
+        res.json(report);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Cleanup - Run routine cleanup
+app.post('/api/cleanup/routine', async (req, res) => {
+    try {
+        const results = await cleanupSystem.performRoutineCleanup();
+        res.json(results);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Cleanup - Analyze disk
+app.get('/api/cleanup/disk', async (req, res) => {
+    try {
+        const analysis = await cleanupSystem.analyzeDiskUsage();
+        res.json(analysis);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Cleanup - Find large files
+app.get('/api/cleanup/large-files/:minSize?', async (req, res) => {
+    try {
+        const minSize = parseInt(req.params.minSize) || 100;
+        const files = await cleanupSystem.findLargeFiles(minSize);
+        res.json({ files, minSizeMB: minSize });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Cleanup - Clean server instance
+app.post('/api/cleanup/server/:id', async (req, res) => {
+    try {
+        const result = await cleanupSystem.cleanServerInstance(req.params.id);
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Cleanup - Compress logs
+app.post('/api/cleanup/compress-logs/:id?', async (req, res) => {
+    try {
+        const serverId = req.params.id || null;
+        const result = await cleanupSystem.compressLogs(serverId);
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Health Check - Get all status
+app.get('/api/health/all', (req, res) => {
+    try {
+        const status = healthCheckSystem.getAllStatus();
+        res.json(status);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Health Check - Get server status
+app.get('/api/health/server/:id', (req, res) => {
+    try {
+        const status = healthCheckSystem.getStatus(req.params.id);
+        const report = healthCheckSystem.getReport(req.params.id);
+        res.json({ status, report });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Health Check - Force check
+app.post('/api/health/check/:id', async (req, res) => {
+    try {
+        const result = await healthCheckSystem.forceCheck(req.params.id);
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Auto-Recovery - Get statistics
+app.get('/api/recovery/stats', (req, res) => {
+    try {
+        const stats = autoRecoverySystem.getStatistics();
+        res.json(stats);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Auto-Recovery - Get server state
+app.get('/api/recovery/server/:id', (req, res) => {
+    try {
+        const report = autoRecoverySystem.getReport(req.params.id);
+        res.json(report);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Auto-Recovery - Manual recovery
+app.post('/api/recovery/trigger/:id', async (req, res) => {
+    try {
+        const success = await autoRecoverySystem.triggerRecovery(req.params.id);
+        res.json({ success, serverId: req.params.id });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Auto-Recovery - Enable/disable
+app.post('/api/recovery/enable', (req, res) => {
+    try {
+        const { enabled } = req.body;
+        autoRecoverySystem.setEnabled(enabled);
+        res.json({ success: true, enabled });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

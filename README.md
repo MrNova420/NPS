@@ -24,24 +24,61 @@ NPS turns any Android device into a professional server platform with automatic 
 
 ## Quick Start
 
-### Running on Android (Termux)
+### Option 1: Automated Installation (Recommended)
 
 ```bash
-pkg install git nodejs openssh
+# Clone the repository
 git clone https://github.com/MrNova420/NPS.git
 cd NPS
-sshd  # Start SSH server
-./quick-start.sh
+
+# Run the installer (works on both Android/Termux and PC)
+bash install.sh
+
+# For Android: The script will guide you through Termux setup
+# For PC: The script will set up dashboard and CLI
 ```
 
-### Controlling Android from PC
+### Option 2: Running on Android (Termux)
+
+```bash
+# 1. Install Termux from F-Droid (NOT Play Store!)
+# Download: https://f-droid.org/packages/com.termux/
+
+# 2. Install prerequisites
+pkg update && pkg upgrade
+pkg install git nodejs openssh python
+
+# 3. Clone and setup
+git clone https://github.com/MrNova420/NPS.git
+cd NPS
+bash setup.sh
+
+# 4. Start SSH server
+sshd
+
+# 5. Find your IP address
+ifconfig
+
+# 6. Start services
+~/server/scripts/service-manager.sh start
+```
+
+### Option 3: Controlling Android from PC
 
 ```bash
 # On PC:
 git clone https://github.com/MrNova420/NPS.git
 cd NPS
-./setup-pc-to-phone.sh  # Interactive setup - asks for phone IP
-# Then: cd dashboard && npm start
+
+# Run setup
+bash setup.sh
+
+# Edit .env with your Android device IP
+nano .env  # Or use any text editor
+
+# Start the dashboard
+./start-dashboard.sh
+# Or manually: cd dashboard && npm start
 ```
 
 Access dashboard at `http://localhost:3000`
@@ -115,6 +152,86 @@ cd dashboard && npm install && npm start
 - **Monitoring** - Real-time metrics and alerts
 - **Backups** - Automated daily backups with retention
 - **Recovery** - Auto-restart failed services
+
+## Troubleshooting
+
+### Installation Issues
+
+**Problem: `install.sh: No such file or directory`**
+```bash
+# Make sure you're in the NPS directory
+cd NPS
+bash install.sh
+```
+
+**Problem: `npm -y` command not found**
+```bash
+# This has been fixed. Pull the latest changes:
+git pull origin main
+bash install.sh
+```
+
+**Problem: Missing dependencies**
+```bash
+# Verify installation
+bash verify-install.sh
+
+# Manually install dashboard dependencies
+cd dashboard && npm install
+
+# Manually install CLI dependencies
+cd cli && npm install
+
+# Install Python dependencies (Android/Termux)
+pip install -r requirements.txt
+```
+
+**Problem: Can't connect to Android device from PC**
+```bash
+# On Android, check SSH is running:
+pgrep sshd || sshd
+
+# Find your Android device IP:
+ifconfig
+
+# On PC, test connection:
+ssh -p 8022 <username>@<android-ip>
+# Replace <username> with output of 'whoami' on Android
+```
+
+**Problem: Dashboard won't start**
+```bash
+# Check if dependencies are installed
+cd dashboard
+npm install
+
+# Try starting manually
+node backend/server.js
+
+# Check if port 3000 is already in use
+lsof -ti:3000  # If shows a PID, kill it: kill <PID>
+```
+
+### Common Errors
+
+**Error: `EADDRINUSE: address already in use :::3000`**
+- Another process is using port 3000
+- Solution: `kill $(lsof -ti:3000)` or change PORT in .env
+
+**Error: Python module not found**
+- Install Python dependencies: `pip install -r requirements.txt`
+
+**Error: Node.js version too old**
+- Install Node.js 14 or higher
+- On Termux: `pkg install nodejs`
+- On PC: Visit https://nodejs.org
+
+## Verification
+
+Run the verification script to check your installation:
+```bash
+bash verify-install.sh
+```
 
 ## Contributing
 

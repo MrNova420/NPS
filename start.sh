@@ -83,7 +83,29 @@ echo "║  Starting NPS Dashboard...                                 ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
 echo "📍 URL: http://localhost:3000"
-echo "📱 Mobile: http://$(hostname -I | awk '{print $1}'):3000"
+
+# Get IP address in a cross-platform way
+if [ -n "$TERMUX_VERSION" ]; then
+    # Termux/Android - try multiple wireless interfaces
+    IP=$(ip -4 addr show 2>/dev/null | grep -E 'wlan|wifi|ap' | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -1)
+    [ -z "$IP" ] && IP=$(ifconfig 2>/dev/null | grep -E -A 1 'wlan|wifi' | tail -1 | awk '{print $2}' | cut -d: -f2)
+    # Fallback to any private IP
+    [ -z "$IP" ] && IP=$(ip -4 addr show 2>/dev/null | grep -oP '(?<=inet\s)(192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+)' | head -1)
+    [ -z "$IP" ] && IP="<your-device-ip>"
+else
+    # Standard Linux/Unix
+    IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+    # Filter for private IP ranges
+    if [ -n "$IP" ]; then
+        echo "$IP" | grep -qE '^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)'
+        [ $? -ne 0 ] && IP=$(hostname -I 2>/dev/null | tr ' ' '\n' | grep -E '^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)' | head -1)
+    fi
+    # Fallback to ip command with private range filter
+    [ -z "$IP" ] && IP=$(ip -4 addr show 2>/dev/null | grep -oP '(?<=inet\s)(192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+)' | head -1)
+    [ -z "$IP" ] && IP="<your-ip>"
+fi
+
+echo "📱 Mobile: http://${IP}:3000"
 echo ""
 echo "Press Ctrl+C to stop"
 echo ""

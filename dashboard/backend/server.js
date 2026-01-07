@@ -107,6 +107,7 @@ const healthCheckSystem = new HealthCheckSystem();
 const serviceDiscovery = new ServiceDiscovery();
 const cleanupSystem = new CleanupSystem();
 let authManager, monitoringManager, backupManager, autoRecoverySystem, autoServerOptimizer;
+let serverManager; // Will be created after ServerManager class is defined below
 
 // Try to initialize enterprise features (optional)
 try {
@@ -133,13 +134,13 @@ Promise.all([
 ]).then(() => {
     console.log('✅ Core managers initialized');
     
-    // Initialize auto-recovery after health check system is ready
+    // Now that core managers are ready, initialize auto-recovery
     autoRecoverySystem = new AutoRecoverySystem(healthCheckSystem, serverManager);
     return autoRecoverySystem.initialize();
 }).then(() => {
     console.log('✅ Auto-recovery system initialized');
     
-    // Initialize auto server optimizer
+    // Initialize auto server optimizer after perfManager and resourceAllocator are ready
     autoServerOptimizer = new AutoServerOptimizer(serverManager, perfManager, resourceAllocator);
     return autoServerOptimizer.initialize();
 }).then(() => {
@@ -179,7 +180,7 @@ app.use((err, req, res, next) => {
 // WebSocket server for real-time updates
 const wss = new WebSocket.Server({ noServer: true });
 
-// Server state management
+// Server state management - Define class first
 class ServerManager {
     constructor() {
         this.servers = new Map();
@@ -620,7 +621,8 @@ class ServerManager {
     }
 }
 
-const serverManager = new ServerManager();
+// Create ServerManager instance now that class is defined
+serverManager = new ServerManager();
 
 // API Routes
 

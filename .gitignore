@@ -55,3 +55,7 @@ certs/
 # Test
 coverage/
 .nyc_output/
+
+# Test scripts
+test-auto-optimization.js
+test-optimization-cycles.js

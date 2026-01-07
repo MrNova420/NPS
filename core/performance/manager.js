@@ -354,8 +354,7 @@ class PerformanceManager {
     }
 
     handleCriticalAlert(alert) {
-        console.log(`⚠️  CRITICAL ALERT: ${alert.message}`);
-        console.log(`   Auto-optimization will attempt to resolve this issue...`);
+        console.log(`⚠️  CRITICAL ALERT: ${alert.message}\n   Auto-optimization will attempt to resolve this issue...`);
         
         switch (alert.type) {
             case 'cpu':

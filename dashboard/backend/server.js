@@ -133,6 +133,21 @@ Promise.all([
     cleanupSystem.initialize().catch(err => console.error('Cleanup System failed:', err.message))
 ]).then(() => {
     console.log('✅ Core managers initialized');
+    
+    // Now that core managers are ready, initialize auto-recovery and optimizer
+    return Promise.resolve().then(() => {
+        // Initialize auto-recovery after health check system is ready
+        autoRecoverySystem = new AutoRecoverySystem(healthCheckSystem, serverManager);
+        return autoRecoverySystem.initialize();
+    }).then(() => {
+        console.log('✅ Auto-recovery system initialized');
+        
+        // Initialize auto server optimizer after perfManager and resourceAllocator are ready
+        autoServerOptimizer = new AutoServerOptimizer(serverManager, perfManager, resourceAllocator);
+        return autoServerOptimizer.initialize();
+    }).then(() => {
+        console.log('✅ Auto server optimizer initialized');
+    });
 }).catch(error => {
     console.error('❌ Core initialization failed:', error);
 });
@@ -611,23 +626,6 @@ class ServerManager {
 
 // Create ServerManager instance now that class is defined
 serverManager = new ServerManager();
-
-// Initialize auto-recovery and optimizer now that serverManager exists
-Promise.resolve().then(() => {
-    // Initialize auto-recovery after health check system is ready
-    autoRecoverySystem = new AutoRecoverySystem(healthCheckSystem, serverManager);
-    return autoRecoverySystem.initialize();
-}).then(() => {
-    console.log('✅ Auto-recovery system initialized');
-    
-    // Initialize auto server optimizer
-    autoServerOptimizer = new AutoServerOptimizer(serverManager, perfManager, resourceAllocator);
-    return autoServerOptimizer.initialize();
-}).then(() => {
-    console.log('✅ Auto server optimizer initialized');
-}).catch(error => {
-    console.error('❌ Auto-recovery/optimizer initialization failed:', error);
-});
 
 // API Routes
 

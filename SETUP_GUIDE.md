@@ -55,7 +55,7 @@ cd ..
 
 5. **Create necessary directories:**
 ```bash
-mkdir -p ~/server/{instances,logs,config,backups,state}
+mkdir -p ~/server/{instances,logs,config,backups,state,temp}
 ```
 
 ### On PC (Remote Control)

@@ -101,8 +101,21 @@ if [ ! -f ~/server/config/profile.json ]; then
     echo "⚙️  Creating default configuration..."
     
     # Detect system specs
-    TOTAL_MEM=$(free -m 2>/dev/null | awk '/Mem:/ {print $2}' || echo "2048")
-    CPU_CORES=$(nproc 2>/dev/null || echo "2")
+    if command -v free >/dev/null 2>&1; then
+        TOTAL_MEM=$(free -m 2>/dev/null | awk '/Mem:/ {print $2}' || echo "2048")
+    elif [ -f /proc/meminfo ]; then
+        TOTAL_MEM=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo)
+    else
+        TOTAL_MEM=2048
+    fi
+    
+    if command -v nproc >/dev/null 2>&1; then
+        CPU_CORES=$(nproc)
+    elif [ -f /proc/cpuinfo ]; then
+        CPU_CORES=$(grep -c ^processor /proc/cpuinfo)
+    else
+        CPU_CORES=2
+    fi
     
     # Determine tier
     if [ "$TOTAL_MEM" -ge 6144 ]; then

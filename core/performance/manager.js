@@ -113,7 +113,7 @@ class PerformanceManager {
         
         this.metricsInterval = setInterval(() => {
             this.collectMetrics();
-        }, 5000); // Every 5 seconds
+        }, 15000); // Every 15 seconds (reduced frequency to save CPU)
 
         this.analysisInterval = setInterval(() => {
             this.analyzeMetrics();
@@ -354,7 +354,8 @@ class PerformanceManager {
     }
 
     handleCriticalAlert(alert) {
-        console.log(`CRITICAL ALERT: ${alert.message}`);
+        console.log(`⚠️  CRITICAL ALERT: ${alert.message}`);
+        console.log(`   Auto-optimization will attempt to resolve this issue...`);
         
         switch (alert.type) {
             case 'cpu':

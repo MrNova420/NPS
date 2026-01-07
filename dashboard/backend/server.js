@@ -79,13 +79,23 @@ const ANDROID_USER = process.env.ANDROID_USER || (isTermux ? process.env.USER : 
 console.log('╔══════════════════════════════════════════════════╗');
 console.log('║  NPS - Enterprise Server Management Platform    ║');
 console.log('╚══════════════════════════════════════════════════╝');
-console.log(`📱 Android Connection: ${ANDROID_USER}@${ANDROID_HOST}:${ANDROID_PORT}`);
-if (!process.env.ANDROID_HOST && !isTermux) {
-    console.log(`⚠️  Using default IP: ${ANDROID_HOST}`);
-    console.log(`   Set ANDROID_HOST in .env to your phone's IP`);
+console.log('');
+console.log('🔧 Environment Configuration:');
+if (isTermux) {
+    console.log('   ✓ Running in Termux (Local Mode)');
+    console.log('   ✓ Direct process execution (no SSH)');
+} else {
+    console.log('   ✓ Running on PC (Remote Mode)');
+    console.log(`   ✓ SSH Target: ${ANDROID_USER}@${ANDROID_HOST}:${ANDROID_PORT}`);
+    if (!process.env.ANDROID_HOST) {
+        console.log(`   ⚠️  Using default IP: ${ANDROID_HOST}`);
+        console.log(`      Set ANDROID_HOST in .env to your phone's IP`);
+    }
 }
+console.log('');
 
 // Initialize Enterprise Managers
+console.log('🚀 Initializing Enterprise Systems...');
 const stateManager = new StateManager();
 const perfManager = new PerformanceManager();
 const processManager = new ProcessManager();
@@ -453,6 +463,33 @@ class ServerManager {
     sshExec(command, options = {}) {
         const timeout = options.timeout || 300000; // Default 5 minutes for long operations like npm install
         
+        // If running locally in Termux, execute directly instead of SSH
+        if (isTermux || ANDROID_HOST === 'localhost' || ANDROID_HOST === '127.0.0.1') {
+            return new Promise((resolve, reject) => {
+                const child = exec(command, {
+                    timeout,
+                    maxBuffer: 10 * 1024 * 1024, // 10MB buffer
+                    shell: '/bin/bash'
+                }, (error, stdout, stderr) => {
+                    if (error) {
+                        if (error.killed) {
+                            reject(new Error(`Command timed out after ${timeout}ms: ${command.substring(0, 100)}`));
+                        } else {
+                            reject(new Error(`Command failed (exit ${error.code}): ${stderr || error.message}`));
+                        }
+                    } else {
+                        resolve({ stdout, stderr });
+                    }
+                });
+                
+                // Log long-running commands
+                if (!options.silent && timeout > 30000) {
+                    console.log(`⏳ Running local command (timeout: ${timeout}ms): ${command.substring(0, 80)}...`);
+                }
+            });
+        }
+        
+        // Remote execution via SSH
         return new Promise((resolve, reject) => {
             const sshCmd = `ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ServerAliveInterval=30 -p ${ANDROID_PORT} ${ANDROID_USER}@${ANDROID_HOST} "${command.replace(/"/g, '\\"')}"`;
             
@@ -478,7 +515,7 @@ class ServerManager {
             
             // Log long-running commands
             if (!options.silent && timeout > 30000) {
-                console.log(`⏳ Running long operation (timeout: ${timeout}ms): ${command.substring(0, 80)}...`);
+                console.log(`⏳ Running SSH command (timeout: ${timeout}ms): ${command.substring(0, 80)}...`);
             }
         });
     }
@@ -1208,21 +1245,42 @@ app.get('/api/health', (req, res) => {
 
 // WebSocket connection
 const server = app.listen(PORT, async () => {
-    console.log(`🚀 Server Management Dashboard running on http://localhost:${PORT}`);
+    console.log('');
+    console.log('╔══════════════════════════════════════════════════╗');
+    console.log('║           Dashboard Started Successfully!        ║');
+    console.log('╚══════════════════════════════════════════════════╝');
+    console.log('');
+    console.log(`🌐 Dashboard URL: http://localhost:${PORT}`);
+    console.log(`📊 WebSocket: ws://localhost:${PORT}`);
+    console.log('');
     
-    // Test SSH connection
+    // Test connection
+    console.log('🔍 Testing connection...');
     try {
-        const result = await serverManager.sshExec('echo "SSH OK"');
-        if (result.stdout.includes('SSH OK')) {
-            console.log(`✅ SSH connection to ${ANDROID_USER}@${ANDROID_HOST}:${ANDROID_PORT} - Working`);
+        const result = await serverManager.sshExec('echo "Connection OK"', { timeout: 10000, silent: true });
+        if (result.stdout.includes('Connection OK')) {
+            if (isTermux) {
+                console.log(`✅ Local execution - Working`);
+            } else {
+                console.log(`✅ SSH connection to ${ANDROID_USER}@${ANDROID_HOST}:${ANDROID_PORT} - Working`);
+            }
+            console.log('');
+            console.log('✅ System is ready! Open http://localhost:${PORT} in your browser');
+            console.log('');
         }
     } catch (error) {
-        console.error(`❌ SSH connection failed: ${error.message}`);
-        console.log(`   Make sure:`);
-        console.log(`   1. SSH server running on Android: sshd`);
-        console.log(`   2. Correct IP in .env: ANDROID_HOST=${ANDROID_HOST}`);
-        console.log(`   3. SSH key added or password auth enabled`);
-        console.log(`   4. Test manually: ssh -p ${ANDROID_PORT} ${ANDROID_USER}@${ANDROID_HOST}`);
+        console.error(`❌ Connection test failed: ${error.message}`);
+        console.log('');
+        console.log(`   Troubleshooting steps:`);
+        if (isTermux) {
+            console.log(`   1. Verify you're in Termux and environment is configured`);
+        } else {
+            console.log(`   1. SSH server running on Android: sshd`);
+            console.log(`   2. Correct IP in .env: ANDROID_HOST=${ANDROID_HOST}`);
+            console.log(`   3. SSH keys configured: bash setup-ssh-keys.sh`);
+            console.log(`   4. Test manually: ssh -p ${ANDROID_PORT} ${ANDROID_USER}@${ANDROID_HOST}`);
+        }
+        console.log('');
     }
 });
 

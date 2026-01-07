@@ -24,21 +24,49 @@ NPS turns any Android device into a professional server platform with automatic 
 - **Enterprise Security** - SSL/TLS, firewalls, automated backups
 - **Termux Optimized** - Runs perfectly on Android
 
+## 🚀 Quick Start - Get Running in 5 Minutes
+
+### Option 1: Automated Setup (Easiest)
+
+```bash
+git clone https://github.com/MrNova420/NPS.git
+cd NPS
+bash setup-complete.sh
+```
+
+The script will:
+- ✅ Detect your environment (Termux or PC)
+- ✅ Install dependencies automatically
+- ✅ Create necessary directories
+- ✅ Configure settings
+- ✅ Guide you through SSH setup (if on PC)
+
+Then start the dashboard:
+```bash
+cd dashboard
+npm start
+```
+
+Open `http://localhost:3000` in your browser and start deploying servers!
+
+### Option 2: Manual Setup
+
+See [SETUP_GUIDE.md](SETUP_GUIDE.md) for detailed step-by-step instructions.
+
 ## 📚 Documentation
 
 **Start Here:**
+- 📘 [**SETUP_GUIDE.md**](SETUP_GUIDE.md) - Complete setup guide with troubleshooting
 - 🚀 [**QUICK_USAGE.md**](QUICK_USAGE.md) - 5-minute quick start guide
 - 📖 [**USAGE_GUIDE.md**](USAGE_GUIDE.md) - Complete in-depth usage guide
-- 🎯 [**GETTING_STARTED.md**](GETTING_STARTED.md) - Installation and setup
 
 **Additional Guides:**
 - [START_HERE.md](START_HERE.md) - Feature overview
 - [QUICKSTART.md](QUICKSTART.md) - Deploy your first server
 - [ADVANCED_README.md](ADVANCED_README.md) - Advanced features
 - [PRODUCTION_README.md](PRODUCTION_README.md) - Production deployment
-- [FIXES_SUMMARY.md](FIXES_SUMMARY.md) - What was fixed in latest update
 
-## Quick Start
+## Detailed Installation Options
 
 ### Option 1: Automated Installation (Recommended)
 

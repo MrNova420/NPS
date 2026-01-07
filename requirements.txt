@@ -1,0 +1,15 @@
+# Python dependencies for NPS - Nova's Private Server
+# Install with: pip install -r requirements.txt
+
+# Task scheduling
+schedule>=1.1.0
+
+# Web framework (for Android/Python services)
+flask>=2.0.0
+
+# Machine learning (optional, for AI services)
+numpy>=1.21.0
+onnxruntime>=1.10.0
+
+# HTTP requests
+requests>=2.26.0

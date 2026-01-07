@@ -1,0 +1,16 @@
+{
+  "name": "nps-cli",
+  "version": "1.0.0",
+  "description": "CLI for NPS - Nova's Private Server",
+  "main": "manager-cli.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node manager-cli.js"
+  },
+  "keywords": ["cli", "server", "management"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "node-fetch": "^2.6.7"
+  }
+}

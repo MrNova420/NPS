@@ -3,6 +3,18 @@ node_modules/
 npm-debug.log*
 package-lock.json
 
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+pip-log.txt
+pip-delete-this-directory.txt
+
 # Environment
 .env
 .env.local

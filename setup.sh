@@ -40,8 +40,17 @@ if [ "$PLATFORM" = "android" ]; then
     echo "Installing additional packages..."
     pkg install -y nodejs python
 
-    npm -y
-    pip install flask onnxruntime numpy
+    # Install Python packages
+    echo "Installing Python packages..."
+    pip install --upgrade pip
+    
+    # Check if requirements.txt exists and use it
+    if [ -f "requirements.txt" ]; then
+        pip install -r requirements.txt
+    else
+        # Fallback to individual installs
+        pip install flask onnxruntime numpy requests schedule
+    fi
     
     echo ""
     echo -e "${GREEN}✓ Android setup complete!${NC}"
@@ -75,8 +84,18 @@ else
     # Install CLI dependencies
     echo "Installing CLI dependencies..."
     cd cli
-    npm install node-fetch
+    npm install
     cd ..
+    
+    # Install Python dependencies (optional)
+    echo "Installing Python dependencies..."
+    if command -v pip3 >/dev/null 2>&1; then
+        pip3 install schedule || echo "Note: Python schedule module not installed (optional)"
+    elif command -v pip >/dev/null 2>&1; then
+        pip install schedule || echo "Note: Python schedule module not installed (optional)"
+    else
+        echo "Note: pip not found. Python automation features will require manual installation of 'schedule' module"
+    fi
     
     # Make scripts executable
     echo "Setting up scripts..."

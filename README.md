@@ -5,8 +5,10 @@ Transform your Android phone into a powerful, production-ready server with enter
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-1.0.0--beta-green.svg)](https://github.com/MrNova420/NPS)
 [![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Termux-orange.svg)](https://termux.dev)
+[![Status](https://img.shields.io/badge/status-Production%20Ready-brightgreen.svg)](FINAL_STATUS.md)
+[![Tests](https://img.shields.io/badge/tests-21%2F21%20passing-brightgreen.svg)](test-install.sh)
 
-> **⚡ Latest Update:** All setup issues fixed! Project is now fully functional with comprehensive documentation. [See what was fixed](FIXES_SUMMARY.md)
+> **⚡ Latest Update:** All setup issues fixed! Project is now fully functional with comprehensive documentation. [See what was fixed](FIXES_SUMMARY.md) | [Final Status Report](FINAL_STATUS.md)
 
 ## Overview
 

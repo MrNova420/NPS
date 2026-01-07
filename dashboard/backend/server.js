@@ -28,6 +28,47 @@ const CleanupSystem = require('../../core/cleanup-system');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Rate limiting to prevent API overload
+const requestCounts = new Map();
+const RATE_LIMIT_WINDOW = 60000; // 1 minute
+const RATE_LIMIT_MAX_REQUESTS = 100; // 100 requests per minute
+
+const rateLimiter = (req, res, next) => {
+    const ip = req.ip || req.connection.remoteAddress;
+    const now = Date.now();
+    
+    // Clean up old entries
+    for (const [key, data] of requestCounts.entries()) {
+        if (now - data.windowStart > RATE_LIMIT_WINDOW) {
+            requestCounts.delete(key);
+        }
+    }
+    
+    // Check rate limit
+    let userData = requestCounts.get(ip);
+    if (!userData) {
+        userData = { count: 0, windowStart: now };
+        requestCounts.set(ip, userData);
+    }
+    
+    if (now - userData.windowStart > RATE_LIMIT_WINDOW) {
+        userData.count = 0;
+        userData.windowStart = now;
+    }
+    
+    userData.count++;
+    
+    if (userData.count > RATE_LIMIT_MAX_REQUESTS) {
+        return res.status(429).json({ 
+            error: 'Too many requests',
+            message: `Rate limit exceeded. Maximum ${RATE_LIMIT_MAX_REQUESTS} requests per minute.`,
+            retryAfter: Math.ceil((RATE_LIMIT_WINDOW - (now - userData.windowStart)) / 1000)
+        });
+    }
+    
+    next();
+};
+
 // Detect environment and set defaults
 const isTermux = process.env.TERMUX_VERSION || process.env.PREFIX?.includes('com.termux');
 const ANDROID_HOST = process.env.ANDROID_HOST || (isTermux ? 'localhost' : '192.168.1.100');
@@ -105,7 +146,18 @@ if (authManager && monitoringManager && backupManager) {
 
 // Middleware
 app.use(express.json());
+app.use(rateLimiter); // Apply rate limiting to all routes
 app.use(express.static(path.join(__dirname, '../frontend/public')));
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+    console.error('Express error:', err);
+    res.status(500).json({ 
+        error: 'Internal server error',
+        message: err.message,
+        path: req.path
+    });
+});
 
 // WebSocket server for real-time updates
 const wss = new WebSocket.Server({ noServer: true });
@@ -198,9 +250,13 @@ class ServerManager {
         
         try {
             server.status = 'deploying';
+            server.deploymentStage = 'initializing';
             this.broadcast({ type: 'server_update', server });
 
             // Allocate resources
+            server.deploymentStage = 'allocating resources';
+            this.broadcast({ type: 'server_update', server });
+            
             const allocation = await resourceAllocator.allocate(
                 server.id, 
                 server.type, 
@@ -218,19 +274,55 @@ class ServerManager {
             }
 
             // Deploy using template
+            server.deploymentStage = 'deploying template';
+            this.broadcast({ type: 'server_update', server });
+            console.log(`📦 Deploying ${server.name} (${server.type})...`);
+            
             const deployResult = await template.deploy(server, this.sshExec.bind(this));
             server.deployResult = deployResult;
 
-            // Register with process manager if PID is available
+            // Verify deployment
+            server.deploymentStage = 'verifying deployment';
+            this.broadcast({ type: 'server_update', server });
+            
+            // Verify process is running if PID is available
             if (deployResult.pid) {
-                // Process manager tracks this
+                const isRunning = await this.verifyProcessRunning(deployResult.pid);
+                if (!isRunning) {
+                    throw new Error(`Process (PID ${deployResult.pid}) is not running. Check logs at ${deployResult.instancePath}/logs/`);
+                }
+                
                 server.pm = {
                     managed: true,
                     pid: deployResult.pid
                 };
+                console.log(`✓ Process verified (PID: ${deployResult.pid})`);
+            }
+            
+            // Verify port is listening if port is specified
+            if (server.port && server.port > 0) {
+                const maxRetries = 10;
+                let retries = 0;
+                let portOpen = false;
+                
+                while (retries < maxRetries && !portOpen) {
+                    portOpen = await this.isPortListening(server.port);
+                    if (!portOpen) {
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                        retries++;
+                    }
+                }
+                
+                if (!portOpen) {
+                    console.warn(`⚠️  Port ${server.port} is not listening after ${maxRetries} seconds`);
+                    // Don't fail deployment, but log warning
+                } else {
+                    console.log(`✓ Port ${server.port} is listening`);
+                }
             }
 
             server.status = 'running';
+            server.deploymentStage = 'completed';
             server.stats.startTime = Date.now();
             await this.saveServers();
             
@@ -242,6 +334,7 @@ class ServerManager {
         } catch (error) {
             server.status = 'failed';
             server.error = error.message;
+            server.deploymentStage = 'failed';
             
             // Release allocated resources
             resourceAllocator.release(server.id);
@@ -252,6 +345,16 @@ class ServerManager {
             await this.saveServers();
             this.broadcast({ type: 'server_error', server, error: error.message });
             console.error(`❌ Server ${server.name} deployment failed:`, error.message);
+            
+            // Provide helpful troubleshooting information
+            if (error.message.includes('timeout') || error.message.includes('timed out')) {
+                console.error('💡 Tip: Check that the target device has enough resources and network connectivity');
+            } else if (error.message.includes('SSH')) {
+                console.error('💡 Tip: Verify SSH is running and credentials are correct');
+                console.error(`   Try: ssh -p ${ANDROID_PORT} ${ANDROID_USER}@${ANDROID_HOST}`);
+            }
+            
+            throw error; // Re-throw to ensure caller knows deployment failed
         }
     }
 
@@ -347,13 +450,36 @@ class ServerManager {
         return port;
     }
 
-    sshExec(command) {
+    sshExec(command, options = {}) {
+        const timeout = options.timeout || 300000; // Default 5 minutes for long operations like npm install
+        
         return new Promise((resolve, reject) => {
-            const sshCmd = `ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 -p ${ANDROID_PORT} ${ANDROID_USER}@${ANDROID_HOST} "${command}"`;
-            exec(sshCmd, (error, stdout, stderr) => {
-                if (error) reject(error);
-                else resolve({ stdout, stderr });
+            const sshCmd = `ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ServerAliveInterval=30 -p ${ANDROID_PORT} ${ANDROID_USER}@${ANDROID_HOST} "${command.replace(/"/g, '\\"')}"`;
+            
+            const child = exec(sshCmd, { 
+                timeout,
+                maxBuffer: 10 * 1024 * 1024 // 10MB buffer for large outputs
+            }, (error, stdout, stderr) => {
+                if (error) {
+                    // Provide more helpful error messages
+                    if (error.killed) {
+                        reject(new Error(`Command timed out after ${timeout}ms: ${command.substring(0, 100)}`));
+                    } else if (error.code === 'ECONNREFUSED') {
+                        reject(new Error(`SSH connection refused. Check that SSH server is running on ${ANDROID_HOST}:${ANDROID_PORT}`));
+                    } else if (error.code === 255) {
+                        reject(new Error(`SSH connection failed. Check credentials and network connection to ${ANDROID_HOST}`));
+                    } else {
+                        reject(new Error(`Command failed (exit ${error.code}): ${stderr || error.message}`));
+                    }
+                } else {
+                    resolve({ stdout, stderr });
+                }
             });
+            
+            // Log long-running commands
+            if (!options.silent && timeout > 30000) {
+                console.log(`⏳ Running long operation (timeout: ${timeout}ms): ${command.substring(0, 80)}...`);
+            }
         });
     }
 
@@ -363,6 +489,63 @@ class ServerManager {
                 client.send(JSON.stringify(data));
             }
         });
+    }
+
+    /**
+     * Verify that a process is running
+     * @param {number} pid - Process ID to check
+     * @returns {Promise<boolean>} True if process is running
+     */
+    async verifyProcessRunning(pid) {
+        if (!pid) return false;
+        try {
+            const { stdout } = await this.sshExec(`ps -p ${pid} -o pid=`, { timeout: 5000, silent: true });
+            return stdout.trim() !== '';
+        } catch (error) {
+            return false;
+        }
+    }
+
+    /**
+     * Wait for a process to start by checking its PID file
+     * @param {string} pidFile - Path to PID file
+     * @param {number} maxWaitMs - Maximum time to wait in milliseconds
+     * @returns {Promise<number>} The PID if found
+     */
+    async waitForProcess(pidFile, maxWaitMs = 30000) {
+        const startTime = Date.now();
+        const checkInterval = 1000; // Check every second
+        
+        while (Date.now() - startTime < maxWaitMs) {
+            try {
+                const { stdout } = await this.sshExec(`cat ${pidFile} 2>/dev/null || echo ""`, { timeout: 5000, silent: true });
+                const pid = parseInt(stdout.trim());
+                
+                if (pid && await this.verifyProcessRunning(pid)) {
+                    return pid;
+                }
+            } catch (error) {
+                // Continue waiting
+            }
+            
+            await new Promise(resolve => setTimeout(resolve, checkInterval));
+        }
+        
+        throw new Error(`Process did not start within ${maxWaitMs}ms. Check logs for details.`);
+    }
+
+    /**
+     * Check if a port is listening
+     * @param {number} port - Port number to check
+     * @returns {Promise<boolean>} True if port is listening
+     */
+    async isPortListening(port) {
+        try {
+            const { stdout } = await this.sshExec(`lsof -ti:${port} 2>/dev/null || netstat -tuln 2>/dev/null | grep ":${port} " || echo ""`, { timeout: 5000, silent: true });
+            return stdout.trim() !== '';
+        } catch (error) {
+            return false;
+        }
     }
 
     /**
@@ -1103,8 +1286,45 @@ setInterval(() => {
 }, 5000);
 
 // Graceful shutdown
-process.on('SIGINT', async () => {
-    console.log('\nShutting down gracefully...');
-    await serverManager.saveServers();
-    process.exit(0);
+const shutdown = async (signal) => {
+    console.log(`\n${signal} received, shutting down gracefully...`);
+    
+    try {
+        // Stop accepting new connections
+        server.close(() => {
+            console.log('HTTP server closed');
+        });
+        
+        // Close WebSocket connections
+        wss.clients.forEach(client => {
+            client.close(1000, 'Server shutting down');
+        });
+        
+        // Save server state
+        await serverManager.saveServers();
+        console.log('✓ Server state saved');
+        
+        // Give processes time to finish
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        console.log('✅ Shutdown complete');
+        process.exit(0);
+    } catch (error) {
+        console.error('Error during shutdown:', error);
+        process.exit(1);
+    }
+};
+
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+// Handle uncaught errors
+process.on('uncaughtException', (error) => {
+    console.error('Uncaught Exception:', error);
+    // Don't exit immediately, try to handle gracefully
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+    // Don't exit immediately, try to handle gracefully
 });

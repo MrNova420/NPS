@@ -206,6 +206,19 @@ cd cli && npm install
 pip install -r requirements.txt
 ```
 
+**Problem: Password prompts when deploying servers**
+```bash
+# Setup SSH keys for password-free authentication
+bash setup-ssh-keys.sh
+
+# This will:
+# 1. Generate SSH keys if needed
+# 2. Copy keys to Android device
+# 3. Configure SSH for automatic login
+
+# After setup, you won't need to enter passwords!
+```
+
 **Problem: Can't connect to Android device from PC**
 ```bash
 # On Android, check SSH is running:
@@ -217,6 +230,26 @@ ifconfig
 # On PC, test connection:
 ssh -p 8022 <username>@<android-ip>
 # Replace <username> with output of 'whoami' on Android
+
+# Setup SSH keys to avoid password prompts:
+bash setup-ssh-keys.sh
+```
+
+**Problem: Server deployment fails after 1-2 minutes**
+```bash
+# This usually means:
+# 1. npm install is taking too long (improved timeout handling added)
+# 2. Network connectivity issues
+# 3. Insufficient resources
+
+# Check logs:
+cat dashboard/logs/*.log
+
+# Verify SSH connection:
+ssh -p 8022 <username>@<android-ip> "echo 'Connection OK'"
+
+# Check device resources:
+ssh -p 8022 <username>@<android-ip> "free -h && df -h"
 ```
 
 **Problem: Dashboard won't start**
@@ -230,6 +263,17 @@ node backend/server.js
 
 # Check if port 3000 is already in use
 lsof -ti:3000  # If shows a PID, kill it: kill <PID>
+```
+
+**Problem: CPU hitting 100% and server crashing**
+```bash
+# The dashboard now has:
+# - Automatic rate limiting (100 req/min)
+# - Resource throttling
+# - Graceful shutdown handling
+
+# You can manually limit server resources in config:
+# Edit server config to set CPU/memory limits
 ```
 
 ### Common Errors

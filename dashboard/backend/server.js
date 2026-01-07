@@ -1425,10 +1425,6 @@ const stopMonitoring = () => {
         }
     }
 };
-            serverStatsInterval = null;
-        }
-    }
-};
 
 // Check if monitoring should run
 const checkMonitoring = () => {

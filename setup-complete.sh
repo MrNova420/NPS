@@ -102,22 +102,26 @@ if [ ! -f ~/server/config/profile.json ]; then
     
     # Detect system specs
     if command -v free >/dev/null 2>&1; then
-        TOTAL_MEM=$(free -m 2>/dev/null | awk '/Mem:/ {print $2}' || echo "2048")
+        TOTAL_MEM=$(free -m 2>/dev/null | awk '/Mem:/ {print $2}')
     elif [ -f /proc/meminfo ]; then
-        TOTAL_MEM=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo)
-    else
-        TOTAL_MEM=2048
+        TOTAL_MEM=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo 2>/dev/null)
     fi
+    # Default to 2048MB if detection failed
+    TOTAL_MEM=${TOTAL_MEM:-2048}
     
     if command -v nproc >/dev/null 2>&1; then
-        CPU_CORES=$(nproc)
+        CPU_CORES=$(nproc 2>/dev/null)
     elif [ -f /proc/cpuinfo ]; then
-        CPU_CORES=$(grep -c ^processor /proc/cpuinfo)
-    else
-        CPU_CORES=2
+        CPU_CORES=$(grep -c ^processor /proc/cpuinfo 2>/dev/null)
     fi
+    # Default to 2 cores if detection failed
+    CPU_CORES=${CPU_CORES:-2}
     
-    # Determine tier
+    # Ensure we have valid positive numbers
+    TOTAL_MEM=$((TOTAL_MEM > 0 ? TOTAL_MEM : 2048))
+    CPU_CORES=$((CPU_CORES > 0 ? CPU_CORES : 2))
+    
+    # Determine tier and ensure MAX_SERVERS is always >= 1
     if [ "$TOTAL_MEM" -ge 6144 ]; then
         TIER="high"
         MAX_SERVERS=12
@@ -135,6 +139,9 @@ if [ ! -f ~/server/config/profile.json ]; then
         MAX_SERVERS=2
         WORKERS=1
     fi
+    
+    # Ensure MAX_SERVERS is at least 1 (safety check)
+    MAX_SERVERS=$((MAX_SERVERS > 0 ? MAX_SERVERS : 1))
     
     cat > ~/server/config/profile.json << EOF
 {
@@ -248,13 +255,13 @@ echo ""
 echo "To start the dashboard:"
 echo ""
 if $IS_TERMUX; then
-    echo "  cd ~/NPS/dashboard"
+    echo "  cd dashboard"
     echo "  npm start"
     echo ""
     echo "Then open in browser:"
     echo "  http://localhost:3000"
 else
-    echo "  cd dashboard"
+    echo "  cd $(basename $(pwd))/dashboard"
     echo "  npm start"
     echo ""
     echo "Then open in browser:"

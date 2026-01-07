@@ -1298,7 +1298,7 @@ const server = app.listen(PORT, async () => {
                 console.log(`✅ SSH connection to ${ANDROID_USER}@${ANDROID_HOST}:${ANDROID_PORT} - Working`);
             }
             console.log('');
-            console.log('✅ System is ready! Open http://localhost:${PORT} in your browser');
+            console.log(`✅ System is ready! Open http://localhost:${PORT} in your browser`);
             console.log('');
         }
     } catch (error) {

@@ -16,7 +16,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 # Detect environment
-if [ -n "$TERMUX_VERSION" ] || [[ "$PREFIX" == *"com.termux"* ]]; then
+if [ -n "$TERMUX_VERSION" ] || [ "$PREFIX" = *"com.termux"* ]; then
     IS_TERMUX=true
     echo -e "${BLUE}Detected Termux environment${NC}"
 else

@@ -24,9 +24,51 @@ const HealthCheckSystem = require('../../core/health-check-system');
 const AutoRecoverySystem = require('../../core/auto-recovery-system');
 const ServiceDiscovery = require('../../core/service-discovery');
 const CleanupSystem = require('../../core/cleanup-system');
+const AutoServerOptimizer = require('../../core/auto-server-optimizer');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Rate limiting to prevent API overload
+const requestCounts = new Map();
+const RATE_LIMIT_WINDOW = 60000; // 1 minute
+const RATE_LIMIT_MAX_REQUESTS = 100; // 100 requests per minute
+
+const rateLimiter = (req, res, next) => {
+    const ip = req.ip || req.connection.remoteAddress;
+    const now = Date.now();
+    
+    // Clean up old entries
+    for (const [key, data] of requestCounts.entries()) {
+        if (now - data.windowStart > RATE_LIMIT_WINDOW) {
+            requestCounts.delete(key);
+        }
+    }
+    
+    // Check rate limit
+    let userData = requestCounts.get(ip);
+    if (!userData) {
+        userData = { count: 0, windowStart: now };
+        requestCounts.set(ip, userData);
+    }
+    
+    if (now - userData.windowStart > RATE_LIMIT_WINDOW) {
+        userData.count = 0;
+        userData.windowStart = now;
+    }
+    
+    userData.count++;
+    
+    if (userData.count > RATE_LIMIT_MAX_REQUESTS) {
+        return res.status(429).json({ 
+            error: 'Too many requests',
+            message: `Rate limit exceeded. Maximum ${RATE_LIMIT_MAX_REQUESTS} requests per minute.`,
+            retryAfter: Math.ceil((RATE_LIMIT_WINDOW - (now - userData.windowStart)) / 1000)
+        });
+    }
+    
+    next();
+};
 
 // Detect environment and set defaults
 const isTermux = process.env.TERMUX_VERSION || process.env.PREFIX?.includes('com.termux');
@@ -38,13 +80,23 @@ const ANDROID_USER = process.env.ANDROID_USER || (isTermux ? process.env.USER : 
 console.log('╔══════════════════════════════════════════════════╗');
 console.log('║  NPS - Enterprise Server Management Platform    ║');
 console.log('╚══════════════════════════════════════════════════╝');
-console.log(`📱 Android Connection: ${ANDROID_USER}@${ANDROID_HOST}:${ANDROID_PORT}`);
-if (!process.env.ANDROID_HOST && !isTermux) {
-    console.log(`⚠️  Using default IP: ${ANDROID_HOST}`);
-    console.log(`   Set ANDROID_HOST in .env to your phone's IP`);
+console.log('');
+console.log('🔧 Environment Configuration:');
+if (isTermux) {
+    console.log('   ✓ Running in Termux (Local Mode)');
+    console.log('   ✓ Direct process execution (no SSH)');
+} else {
+    console.log('   ✓ Running on PC (Remote Mode)');
+    console.log(`   ✓ SSH Target: ${ANDROID_USER}@${ANDROID_HOST}:${ANDROID_PORT}`);
+    if (!process.env.ANDROID_HOST) {
+        console.log(`   ⚠️  Using default IP: ${ANDROID_HOST}`);
+        console.log(`      Set ANDROID_HOST in .env to your phone's IP`);
+    }
 }
+console.log('');
 
 // Initialize Enterprise Managers
+console.log('🚀 Initializing Enterprise Systems...');
 const stateManager = new StateManager();
 const perfManager = new PerformanceManager();
 const processManager = new ProcessManager();
@@ -54,7 +106,7 @@ const networkManager = new NetworkManager();
 const healthCheckSystem = new HealthCheckSystem();
 const serviceDiscovery = new ServiceDiscovery();
 const cleanupSystem = new CleanupSystem();
-let authManager, monitoringManager, backupManager, autoRecoverySystem;
+let authManager, monitoringManager, backupManager, autoRecoverySystem, autoServerOptimizer;
 
 // Try to initialize enterprise features (optional)
 try {
@@ -86,6 +138,12 @@ Promise.all([
     return autoRecoverySystem.initialize();
 }).then(() => {
     console.log('✅ Auto-recovery system initialized');
+    
+    // Initialize auto server optimizer
+    autoServerOptimizer = new AutoServerOptimizer(serverManager, perfManager, resourceAllocator);
+    return autoServerOptimizer.initialize();
+}).then(() => {
+    console.log('✅ Auto server optimizer initialized');
 }).catch(error => {
     console.error('❌ Core initialization failed:', error);
 });
@@ -105,7 +163,18 @@ if (authManager && monitoringManager && backupManager) {
 
 // Middleware
 app.use(express.json());
+app.use(rateLimiter); // Apply rate limiting to all routes
 app.use(express.static(path.join(__dirname, '../frontend/public')));
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+    console.error('Express error:', err);
+    res.status(500).json({ 
+        error: 'Internal server error',
+        message: err.message,
+        path: req.path
+    });
+});
 
 // WebSocket server for real-time updates
 const wss = new WebSocket.Server({ noServer: true });
@@ -189,6 +258,11 @@ class ServerManager {
 
         // Deploy server based on template
         await this.deployServer(server);
+        
+        // Start monitoring if first server
+        if (typeof checkMonitoring === 'function') {
+            checkMonitoring();
+        }
 
         return server;
     }
@@ -198,9 +272,13 @@ class ServerManager {
         
         try {
             server.status = 'deploying';
+            server.deploymentStage = 'initializing';
             this.broadcast({ type: 'server_update', server });
 
             // Allocate resources
+            server.deploymentStage = 'allocating resources';
+            this.broadcast({ type: 'server_update', server });
+            
             const allocation = await resourceAllocator.allocate(
                 server.id, 
                 server.type, 
@@ -218,19 +296,55 @@ class ServerManager {
             }
 
             // Deploy using template
+            server.deploymentStage = 'deploying template';
+            this.broadcast({ type: 'server_update', server });
+            console.log(`📦 Deploying ${server.name} (${server.type})...`);
+            
             const deployResult = await template.deploy(server, this.sshExec.bind(this));
             server.deployResult = deployResult;
 
-            // Register with process manager if PID is available
+            // Verify deployment
+            server.deploymentStage = 'verifying deployment';
+            this.broadcast({ type: 'server_update', server });
+            
+            // Verify process is running if PID is available
             if (deployResult.pid) {
-                // Process manager tracks this
+                const isRunning = await this.verifyProcessRunning(deployResult.pid);
+                if (!isRunning) {
+                    throw new Error(`Process (PID ${deployResult.pid}) is not running. Check logs at ${deployResult.instancePath}/logs/`);
+                }
+                
                 server.pm = {
                     managed: true,
                     pid: deployResult.pid
                 };
+                console.log(`✓ Process verified (PID: ${deployResult.pid})`);
+            }
+            
+            // Verify port is listening if port is specified
+            if (server.port && server.port > 0) {
+                const maxRetries = 10;
+                let retries = 0;
+                let portOpen = false;
+                
+                while (retries < maxRetries && !portOpen) {
+                    portOpen = await this.isPortListening(server.port);
+                    if (!portOpen) {
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                        retries++;
+                    }
+                }
+                
+                if (!portOpen) {
+                    console.warn(`⚠️  Port ${server.port} is not listening after ${maxRetries} seconds`);
+                    // Don't fail deployment, but log warning
+                } else {
+                    console.log(`✓ Port ${server.port} is listening`);
+                }
             }
 
             server.status = 'running';
+            server.deploymentStage = 'completed';
             server.stats.startTime = Date.now();
             await this.saveServers();
             
@@ -242,6 +356,7 @@ class ServerManager {
         } catch (error) {
             server.status = 'failed';
             server.error = error.message;
+            server.deploymentStage = 'failed';
             
             // Release allocated resources
             resourceAllocator.release(server.id);
@@ -252,6 +367,16 @@ class ServerManager {
             await this.saveServers();
             this.broadcast({ type: 'server_error', server, error: error.message });
             console.error(`❌ Server ${server.name} deployment failed:`, error.message);
+            
+            // Provide helpful troubleshooting information
+            if (error.message.includes('timeout') || error.message.includes('timed out')) {
+                console.error('💡 Tip: Check that the target device has enough resources and network connectivity');
+            } else if (error.message.includes('SSH')) {
+                console.error('💡 Tip: Verify SSH is running and credentials are correct');
+                console.error(`   Try: ssh -p ${ANDROID_PORT} ${ANDROID_USER}@${ANDROID_HOST}`);
+            }
+            
+            throw error; // Re-throw to ensure caller knows deployment failed
         }
     }
 
@@ -303,6 +428,11 @@ class ServerManager {
         this.servers.delete(serverId);
         await this.saveServers();
         this.broadcast({ type: 'server_deleted', serverId });
+        
+        // Stop monitoring if no servers left
+        if (typeof checkMonitoring === 'function') {
+            checkMonitoring();
+        }
     }
 
     async updateServerStats() {
@@ -347,13 +477,63 @@ class ServerManager {
         return port;
     }
 
-    sshExec(command) {
-        return new Promise((resolve, reject) => {
-            const sshCmd = `ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 -p ${ANDROID_PORT} ${ANDROID_USER}@${ANDROID_HOST} "${command}"`;
-            exec(sshCmd, (error, stdout, stderr) => {
-                if (error) reject(error);
-                else resolve({ stdout, stderr });
+    sshExec(command, options = {}) {
+        const timeout = options.timeout || 300000; // Default 5 minutes for long operations like npm install
+        
+        // If running locally in Termux, execute directly instead of SSH
+        if (isTermux || ANDROID_HOST === 'localhost' || ANDROID_HOST === '127.0.0.1') {
+            return new Promise((resolve, reject) => {
+                const child = exec(command, {
+                    timeout,
+                    maxBuffer: 10 * 1024 * 1024, // 10MB buffer
+                    shell: '/bin/bash'
+                }, (error, stdout, stderr) => {
+                    if (error) {
+                        if (error.killed) {
+                            reject(new Error(`Command timed out after ${timeout}ms: ${command.substring(0, 100)}`));
+                        } else {
+                            reject(new Error(`Command failed (exit ${error.code}): ${stderr || error.message}`));
+                        }
+                    } else {
+                        resolve({ stdout, stderr });
+                    }
+                });
+                
+                // Log long-running commands
+                if (!options.silent && timeout > 30000) {
+                    console.log(`⏳ Running local command (timeout: ${timeout}ms): ${command.substring(0, 80)}...`);
+                }
             });
+        }
+        
+        // Remote execution via SSH
+        return new Promise((resolve, reject) => {
+            const sshCmd = `ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ServerAliveInterval=30 -p ${ANDROID_PORT} ${ANDROID_USER}@${ANDROID_HOST} "${command.replace(/"/g, '\\"')}"`;
+            
+            const child = exec(sshCmd, { 
+                timeout,
+                maxBuffer: 10 * 1024 * 1024 // 10MB buffer for large outputs
+            }, (error, stdout, stderr) => {
+                if (error) {
+                    // Provide more helpful error messages
+                    if (error.killed) {
+                        reject(new Error(`Command timed out after ${timeout}ms: ${command.substring(0, 100)}`));
+                    } else if (error.code === 'ECONNREFUSED') {
+                        reject(new Error(`SSH connection refused. Check that SSH server is running on ${ANDROID_HOST}:${ANDROID_PORT}`));
+                    } else if (error.code === 255) {
+                        reject(new Error(`SSH connection failed. Check credentials and network connection to ${ANDROID_HOST}`));
+                    } else {
+                        reject(new Error(`Command failed (exit ${error.code}): ${stderr || error.message}`));
+                    }
+                } else {
+                    resolve({ stdout, stderr });
+                }
+            });
+            
+            // Log long-running commands
+            if (!options.silent && timeout > 30000) {
+                console.log(`⏳ Running SSH command (timeout: ${timeout}ms): ${command.substring(0, 80)}...`);
+            }
         });
     }
 
@@ -363,6 +543,63 @@ class ServerManager {
                 client.send(JSON.stringify(data));
             }
         });
+    }
+
+    /**
+     * Verify that a process is running
+     * @param {number} pid - Process ID to check
+     * @returns {Promise<boolean>} True if process is running
+     */
+    async verifyProcessRunning(pid) {
+        if (!pid) return false;
+        try {
+            const { stdout } = await this.sshExec(`ps -p ${pid} -o pid=`, { timeout: 5000, silent: true });
+            return stdout.trim() !== '';
+        } catch (error) {
+            return false;
+        }
+    }
+
+    /**
+     * Wait for a process to start by checking its PID file
+     * @param {string} pidFile - Path to PID file
+     * @param {number} maxWaitMs - Maximum time to wait in milliseconds
+     * @returns {Promise<number>} The PID if found
+     */
+    async waitForProcess(pidFile, maxWaitMs = 30000) {
+        const startTime = Date.now();
+        const checkInterval = 1000; // Check every second
+        
+        while (Date.now() - startTime < maxWaitMs) {
+            try {
+                const { stdout } = await this.sshExec(`cat ${pidFile} 2>/dev/null || echo ""`, { timeout: 5000, silent: true });
+                const pid = parseInt(stdout.trim());
+                
+                if (pid && await this.verifyProcessRunning(pid)) {
+                    return pid;
+                }
+            } catch (error) {
+                // Continue waiting
+            }
+            
+            await new Promise(resolve => setTimeout(resolve, checkInterval));
+        }
+        
+        throw new Error(`Process did not start within ${maxWaitMs}ms. Check logs for details.`);
+    }
+
+    /**
+     * Check if a port is listening
+     * @param {number} port - Port number to check
+     * @returns {Promise<boolean>} True if port is listening
+     */
+    async isPortListening(port) {
+        try {
+            const { stdout } = await this.sshExec(`lsof -ti:${port} 2>/dev/null || netstat -tuln 2>/dev/null | grep ":${port} " || echo ""`, { timeout: 5000, silent: true });
+            return stdout.trim() !== '';
+        } catch (error) {
+            return false;
+        }
     }
 
     /**
@@ -1000,13 +1237,29 @@ app.get('/api/enterprise/dashboard', async (req, res) => {
                 stopped: Array.from(serverManager.servers.values()).filter(s => s.status === 'stopped').length
             },
             performance: perfManager.getPerformanceReport ? await perfManager.getPerformanceReport() : {},
+            optimization: autoServerOptimizer ? autoServerOptimizer.getReport() : { enabled: false },
             features: {
                 auth: !!authManager,
                 monitoring: !!monitoringManager,
-                backup: !!backupManager
+                backup: !!backupManager,
+                autoOptimization: !!autoServerOptimizer
             }
         };
         res.json(dashboard);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Auto optimization report
+app.get('/api/optimization/report', (req, res) => {
+    if (!autoServerOptimizer) {
+        return res.json({ enabled: false, message: 'Auto optimization not available' });
+    }
+    
+    try {
+        const report = autoServerOptimizer.getReport();
+        res.json(report);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -1025,21 +1278,42 @@ app.get('/api/health', (req, res) => {
 
 // WebSocket connection
 const server = app.listen(PORT, async () => {
-    console.log(`🚀 Server Management Dashboard running on http://localhost:${PORT}`);
+    console.log('');
+    console.log('╔══════════════════════════════════════════════════╗');
+    console.log('║           Dashboard Started Successfully!        ║');
+    console.log('╚══════════════════════════════════════════════════╝');
+    console.log('');
+    console.log(`🌐 Dashboard URL: http://localhost:${PORT}`);
+    console.log(`📊 WebSocket: ws://localhost:${PORT}`);
+    console.log('');
     
-    // Test SSH connection
+    // Test connection
+    console.log('🔍 Testing connection...');
     try {
-        const result = await serverManager.sshExec('echo "SSH OK"');
-        if (result.stdout.includes('SSH OK')) {
-            console.log(`✅ SSH connection to ${ANDROID_USER}@${ANDROID_HOST}:${ANDROID_PORT} - Working`);
+        const result = await serverManager.sshExec('echo "Connection OK"', { timeout: 10000, silent: true });
+        if (result.stdout.includes('Connection OK')) {
+            if (isTermux) {
+                console.log(`✅ Local execution - Working`);
+            } else {
+                console.log(`✅ SSH connection to ${ANDROID_USER}@${ANDROID_HOST}:${ANDROID_PORT} - Working`);
+            }
+            console.log('');
+            console.log(`✅ System is ready! Open http://localhost:${PORT} in your browser`);
+            console.log('');
         }
     } catch (error) {
-        console.error(`❌ SSH connection failed: ${error.message}`);
-        console.log(`   Make sure:`);
-        console.log(`   1. SSH server running on Android: sshd`);
-        console.log(`   2. Correct IP in .env: ANDROID_HOST=${ANDROID_HOST}`);
-        console.log(`   3. SSH key added or password auth enabled`);
-        console.log(`   4. Test manually: ssh -p ${ANDROID_PORT} ${ANDROID_USER}@${ANDROID_HOST}`);
+        console.error(`❌ Connection test failed: ${error.message}`);
+        console.log('');
+        console.log(`   Troubleshooting steps:`);
+        if (isTermux) {
+            console.log(`   1. Verify you're in Termux and environment is configured`);
+        } else {
+            console.log(`   1. SSH server running on Android: sshd`);
+            console.log(`   2. Correct IP in .env: ANDROID_HOST=${ANDROID_HOST}`);
+            console.log(`   3. SSH keys configured: bash setup-ssh-keys.sh`);
+            console.log(`   4. Test manually: ssh -p ${ANDROID_PORT} ${ANDROID_USER}@${ANDROID_HOST}`);
+        }
+        console.log('');
     }
 });
 
@@ -1050,7 +1324,10 @@ server.on('upgrade', (request, socket, head) => {
 });
 
 wss.on('connection', (ws) => {
-    console.log('Client connected via WebSocket');
+    activeClients++;
+    console.log(`📱 Client connected via WebSocket (${activeClients} active)`);
+    checkMonitoring(); // Start monitoring if needed
+    
     ws.send(JSON.stringify({ type: 'connected', message: 'WebSocket connected' }));
     
     // Send initial system stats
@@ -1068,43 +1345,142 @@ wss.on('connection', (ws) => {
             }));
         }).catch(console.error);
     }
+    
+    // Handle client disconnect
+    ws.on('close', () => {
+        activeClients--;
+        console.log(`📱 Client disconnected (${activeClients} active)`);
+        checkMonitoring(); // Stop monitoring if not needed
+    });
 });
 
-// Broadcast system stats to all clients every 5 seconds
-setInterval(async () => {
-    if (!perfManager || !perfManager.getMetrics) return;
-    
-    try {
-        const metrics = await perfManager.getMetrics();
-        const statsUpdate = {
-            type: 'system_stats',
-            stats: {
-                cpu: metrics.cpu,
-                memory: metrics.memory,
-                disk: metrics.disk,
-                temperature: metrics.temperature,
-                timestamp: metrics.timestamp
-            }
-        };
-        
-        wss.clients.forEach(client => {
-            if (client.readyState === WebSocket.OPEN) {
-                client.send(JSON.stringify(statsUpdate));
-            }
-        });
-    } catch (error) {
-        console.error('Failed to broadcast system stats:', error);
-    }
-}, 5000);
+// Smart monitoring system - only active when needed
+let statsInterval = null;
+let serverStatsInterval = null;
+let activeClients = 0;
 
-// Update server stats every 5 seconds
-setInterval(() => {
-    serverManager.updateServerStats();
-}, 5000);
+const startMonitoring = () => {
+    if (statsInterval) return; // Already running
+    
+    console.log('🔍 Starting monitoring (clients connected or servers running)');
+    
+    // Enable performance manager monitoring
+    if (perfManager && perfManager.enableMonitoring) {
+        perfManager.enableMonitoring();
+    }
+    
+    // Broadcast system stats to all clients every 5 seconds (only when clients connected)
+    statsInterval = setInterval(async () => {
+        if (!perfManager || !perfManager.getMetrics) return;
+        if (wss.clients.size === 0) return; // Skip if no clients
+        
+        try {
+            const metrics = await perfManager.getMetrics();
+            const statsUpdate = {
+                type: 'system_stats',
+                stats: {
+                    cpu: metrics.cpu,
+                    memory: metrics.memory,
+                    disk: metrics.disk,
+                    temperature: metrics.temperature,
+                    timestamp: metrics.timestamp
+                }
+            };
+            
+            wss.clients.forEach(client => {
+                if (client.readyState === WebSocket.OPEN) {
+                    client.send(JSON.stringify(statsUpdate));
+                }
+            });
+        } catch (error) {
+            console.error('Failed to broadcast system stats:', error);
+        }
+    }, 5000);
+
+    // Update server stats every 5 seconds (only when servers exist)
+    serverStatsInterval = setInterval(() => {
+        if (serverManager.servers.size > 0) {
+            serverManager.updateServerStats();
+        }
+    }, 5000);
+};
+
+const stopMonitoring = () => {
+    if (activeClients === 0 && serverManager.servers.size === 0) {
+        console.log('💤 Stopping monitoring (no clients or servers - saving CPU)');
+        
+        if (statsInterval) {
+            clearInterval(statsInterval);
+            statsInterval = null;
+        }
+        
+        if (serverStatsInterval) {
+            clearInterval(serverStatsInterval);
+            serverStatsInterval = null;
+        }
+        
+        // Disable performance manager monitoring
+        if (perfManager && perfManager.disableMonitoring) {
+            perfManager.disableMonitoring();
+        }
+    }
+};
+            serverStatsInterval = null;
+        }
+    }
+};
+
+// Check if monitoring should run
+const checkMonitoring = () => {
+    const shouldMonitor = activeClients > 0 || serverManager.servers.size > 0;
+    
+    if (shouldMonitor && !statsInterval) {
+        startMonitoring();
+    } else if (!shouldMonitor && statsInterval) {
+        stopMonitoring();
+    }
+};
 
 // Graceful shutdown
-process.on('SIGINT', async () => {
-    console.log('\nShutting down gracefully...');
-    await serverManager.saveServers();
-    process.exit(0);
+const shutdown = async (signal) => {
+    console.log(`\n${signal} received, shutting down gracefully...`);
+    
+    try {
+        // Stop accepting new connections
+        server.close(() => {
+            console.log('HTTP server closed');
+        });
+        
+        // Close WebSocket connections
+        wss.clients.forEach(client => {
+            client.close(1000, 'Server shutting down');
+        });
+        
+        // Save server state
+        await serverManager.saveServers();
+        console.log('✓ Server state saved');
+        
+        // Give processes time to finish
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        console.log('✅ Shutdown complete');
+        process.exit(0);
+    } catch (error) {
+        console.error('Error during shutdown:', error);
+        process.exit(1);
+    }
+};
+
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+// Handle uncaught errors
+process.on('uncaughtException', (error) => {
+    console.error('Uncaught Exception:', error);
+    // Don't exit immediately, try to handle gracefully
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+    // Don't exit immediately, try to handle gracefully
 });

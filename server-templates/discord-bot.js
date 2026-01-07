@@ -287,17 +287,41 @@ EOF`);
 
         // Install dependencies
         console.log('Installing Discord bot dependencies...');
-        await sshExec(`cd ${instancePath} && npm install --production --no-audit --no-fund`);
+        try {
+            await sshExec(`cd ${instancePath} && npm install --production --no-audit --no-fund`, { timeout: 300000 });
+            console.log('✓ Dependencies installed successfully');
+        } catch (error) {
+            throw new Error(`Failed to install dependencies: ${error.message}. Check that npm is available and network is working.`);
+        }
         
         // Start bot
-        await sshExec(`cd ${instancePath} && nohup node bot.js > logs/console.log 2>&1 & echo $! > logs/bot.pid`);
+        console.log('Starting Discord bot...');
+        try {
+            await sshExec(`cd ${instancePath} && nohup node bot.js > logs/console.log 2>&1 & echo $! > logs/bot.pid`);
+        } catch (error) {
+            throw new Error(`Failed to start bot: ${error.message}`);
+        }
         
-        // Wait for bot to start
-        await new Promise(resolve => setTimeout(resolve, 3000));
-        
-        // Get PID
-        const { stdout: pidOut } = await sshExec(`cat ${instancePath}/logs/bot.pid`);
-        const pid = parseInt(pidOut.trim());
+        // Get PID and verify it's running
+        let pid;
+        try {
+            const { stdout: pidOut } = await sshExec(`cat ${instancePath}/logs/bot.pid 2>/dev/null || echo ""`);
+            pid = parseInt(pidOut.trim());
+            
+            if (!pid) {
+                throw new Error('Bot PID not found. Check logs for startup errors.');
+            }
+            
+            // Verify process is running
+            const { stdout: psOut } = await sshExec(`ps -p ${pid} -o pid= 2>/dev/null || echo ""`);
+            if (!psOut.trim()) {
+                throw new Error(`Bot process (PID ${pid}) is not running. Check logs at ${instancePath}/logs/console.log`);
+            }
+            
+            console.log(`✓ Bot process started (PID: ${pid})`);
+        } catch (error) {
+            throw new Error(`Failed to verify bot started: ${error.message}`);
+        }
         
         return { 
             instancePath, 

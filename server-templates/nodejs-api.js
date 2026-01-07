@@ -295,17 +295,46 @@ EOF`);
 
         // Install dependencies
         console.log('Installing Node.js API dependencies...');
-        await sshExec(`cd ${instancePath} && npm install --production --no-audit --no-fund`);
+        try {
+            await sshExec(`cd ${instancePath} && npm install --production --no-audit --no-fund`, { timeout: 300000 }); // 5 minute timeout
+            console.log('✓ Dependencies installed successfully');
+        } catch (error) {
+            throw new Error(`Failed to install dependencies: ${error.message}. Check that npm is available and network is working.`);
+        }
         
         // Start server
-        await sshExec(`cd ${instancePath} && nohup node server.js > logs/server.log 2>&1 & echo $! > logs/server.pid`);
+        console.log('Starting Node.js API server...');
+        try {
+            await sshExec(`cd ${instancePath} && nohup node server.js > logs/server.log 2>&1 & echo $! > logs/server.pid`);
+        } catch (error) {
+            throw new Error(`Failed to start server: ${error.message}`);
+        }
         
-        // Wait for server to start
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        // Get PID and verify it's running
+        let pid;
+        try {
+            const { stdout: pidOut } = await sshExec(`cat ${instancePath}/logs/server.pid 2>/dev/null || echo ""`);
+            pid = parseInt(pidOut.trim());
+            
+            if (!pid) {
+                throw new Error('Server PID not found. Check logs for startup errors.');
+            }
+            
+            // Verify process is running
+            const { stdout: psOut } = await sshExec(`ps -p ${pid} -o pid= 2>/dev/null || echo ""`);
+            if (!psOut.trim()) {
+                throw new Error(`Server process (PID ${pid}) is not running. Check logs at ${instancePath}/logs/server.log`);
+            }
+            
+            console.log(`✓ Server process started (PID: ${pid})`);
+        } catch (error) {
+            throw new Error(`Failed to verify server started: ${error.message}`);
+        }
         
         return { 
             instancePath, 
             port: server.port,
+            pid,
             workers: enableClustering ? workers : 1,
             endpoints: {
                 health: 'http://localhost:' + server.port + '/health',

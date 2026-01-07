@@ -326,22 +326,52 @@ EOF`);
 
         // Install dependencies
         console.log('Installing Flask dependencies...');
-        await sshExec(`cd ${instancePath} && pip install -r requirements.txt`);
+        try {
+            await sshExec(`cd ${instancePath} && pip install -r requirements.txt`, { timeout: 300000 });
+            console.log('✓ Dependencies installed successfully');
+        } catch (error) {
+            throw new Error(`Failed to install dependencies: ${error.message}. Check that pip is available and network is working.`);
+        }
         
         // Initialize database if enabled
         if (server.config.database) {
-            await sshExec(`cd ${instancePath} && python -c "from app import app, db; app.app_context().push(); db.create_all()"`);
+            console.log('Initializing database...');
+            try {
+                await sshExec(`cd ${instancePath} && python -c "from app import app, db; app.app_context().push(); db.create_all()"`);
+                console.log('✓ Database initialized');
+            } catch (error) {
+                throw new Error(`Failed to initialize database: ${error.message}`);
+            }
         }
         
         // Start with Gunicorn
-        await sshExec(`cd ${instancePath} && nohup gunicorn -c gunicorn.conf.py app:app > logs/gunicorn.log 2>&1 & echo $! > logs/server.pid`);
+        console.log('Starting Flask app with Gunicorn...');
+        try {
+            await sshExec(`cd ${instancePath} && nohup gunicorn -c gunicorn.conf.py app:app > logs/gunicorn.log 2>&1 & echo $! > logs/server.pid`);
+        } catch (error) {
+            throw new Error(`Failed to start server: ${error.message}`);
+        }
         
-        // Wait for server to start
-        await new Promise(resolve => setTimeout(resolve, 3000));
-        
-        // Get PID
-        const { stdout: pidOut } = await sshExec(`cat ${instancePath}/logs/server.pid`);
-        const pid = parseInt(pidOut.trim());
+        // Get PID and verify it's running
+        let pid;
+        try {
+            const { stdout: pidOut } = await sshExec(`cat ${instancePath}/logs/server.pid 2>/dev/null || echo ""`);
+            pid = parseInt(pidOut.trim());
+            
+            if (!pid) {
+                throw new Error('Server PID not found. Check logs for startup errors.');
+            }
+            
+            // Verify process is running
+            const { stdout: psOut } = await sshExec(`ps -p ${pid} -o pid= 2>/dev/null || echo ""`);
+            if (!psOut.trim()) {
+                throw new Error(`Server process (PID ${pid}) is not running. Check logs at ${instancePath}/logs/gunicorn.log`);
+            }
+            
+            console.log(`✓ Flask server started (PID: ${pid})`);
+        } catch (error) {
+            throw new Error(`Failed to verify server started: ${error.message}`);
+        }
         
         return { 
             instancePath, 

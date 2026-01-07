@@ -101,13 +101,40 @@ class PerformanceManager {
     }
 
     startMonitoring() {
-        setInterval(() => {
+        // Only start monitoring if explicitly enabled
+        this.monitoringActive = false;
+    }
+    
+    enableMonitoring() {
+        if (this.monitoringActive) return;
+        
+        this.monitoringActive = true;
+        console.log('📊 Performance monitoring enabled');
+        
+        this.metricsInterval = setInterval(() => {
             this.collectMetrics();
         }, 5000); // Every 5 seconds
 
-        setInterval(() => {
+        this.analysisInterval = setInterval(() => {
             this.analyzeMetrics();
         }, 30000); // Every 30 seconds
+    }
+    
+    disableMonitoring() {
+        if (!this.monitoringActive) return;
+        
+        this.monitoringActive = false;
+        console.log('💤 Performance monitoring disabled (saving CPU)');
+        
+        if (this.metricsInterval) {
+            clearInterval(this.metricsInterval);
+            this.metricsInterval = null;
+        }
+        
+        if (this.analysisInterval) {
+            clearInterval(this.analysisInterval);
+            this.analysisInterval = null;
+        }
     }
 
     startOptimization() {

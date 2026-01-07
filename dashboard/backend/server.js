@@ -24,6 +24,7 @@ const HealthCheckSystem = require('../../core/health-check-system');
 const AutoRecoverySystem = require('../../core/auto-recovery-system');
 const ServiceDiscovery = require('../../core/service-discovery');
 const CleanupSystem = require('../../core/cleanup-system');
+const AutoServerOptimizer = require('../../core/auto-server-optimizer');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -105,7 +106,7 @@ const networkManager = new NetworkManager();
 const healthCheckSystem = new HealthCheckSystem();
 const serviceDiscovery = new ServiceDiscovery();
 const cleanupSystem = new CleanupSystem();
-let authManager, monitoringManager, backupManager, autoRecoverySystem;
+let authManager, monitoringManager, backupManager, autoRecoverySystem, autoServerOptimizer;
 
 // Try to initialize enterprise features (optional)
 try {
@@ -137,6 +138,12 @@ Promise.all([
     return autoRecoverySystem.initialize();
 }).then(() => {
     console.log('✅ Auto-recovery system initialized');
+    
+    // Initialize auto server optimizer
+    autoServerOptimizer = new AutoServerOptimizer(serverManager, perfManager, resourceAllocator);
+    return autoServerOptimizer.initialize();
+}).then(() => {
+    console.log('✅ Auto server optimizer initialized');
 }).catch(error => {
     console.error('❌ Core initialization failed:', error);
 });
@@ -251,6 +258,11 @@ class ServerManager {
 
         // Deploy server based on template
         await this.deployServer(server);
+        
+        // Start monitoring if first server
+        if (typeof checkMonitoring === 'function') {
+            checkMonitoring();
+        }
 
         return server;
     }
@@ -416,6 +428,11 @@ class ServerManager {
         this.servers.delete(serverId);
         await this.saveServers();
         this.broadcast({ type: 'server_deleted', serverId });
+        
+        // Stop monitoring if no servers left
+        if (typeof checkMonitoring === 'function') {
+            checkMonitoring();
+        }
     }
 
     async updateServerStats() {
@@ -1220,13 +1237,29 @@ app.get('/api/enterprise/dashboard', async (req, res) => {
                 stopped: Array.from(serverManager.servers.values()).filter(s => s.status === 'stopped').length
             },
             performance: perfManager.getPerformanceReport ? await perfManager.getPerformanceReport() : {},
+            optimization: autoServerOptimizer ? autoServerOptimizer.getReport() : { enabled: false },
             features: {
                 auth: !!authManager,
                 monitoring: !!monitoringManager,
-                backup: !!backupManager
+                backup: !!backupManager,
+                autoOptimization: !!autoServerOptimizer
             }
         };
         res.json(dashboard);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Auto optimization report
+app.get('/api/optimization/report', (req, res) => {
+    if (!autoServerOptimizer) {
+        return res.json({ enabled: false, message: 'Auto optimization not available' });
+    }
+    
+    try {
+        const report = autoServerOptimizer.getReport();
+        res.json(report);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -1291,7 +1324,10 @@ server.on('upgrade', (request, socket, head) => {
 });
 
 wss.on('connection', (ws) => {
-    console.log('Client connected via WebSocket');
+    activeClients++;
+    console.log(`📱 Client connected via WebSocket (${activeClients} active)`);
+    checkMonitoring(); // Start monitoring if needed
+    
     ws.send(JSON.stringify({ type: 'connected', message: 'WebSocket connected' }));
     
     // Send initial system stats
@@ -1309,39 +1345,101 @@ wss.on('connection', (ws) => {
             }));
         }).catch(console.error);
     }
+    
+    // Handle client disconnect
+    ws.on('close', () => {
+        activeClients--;
+        console.log(`📱 Client disconnected (${activeClients} active)`);
+        checkMonitoring(); // Stop monitoring if not needed
+    });
 });
 
-// Broadcast system stats to all clients every 5 seconds
-setInterval(async () => {
-    if (!perfManager || !perfManager.getMetrics) return;
-    
-    try {
-        const metrics = await perfManager.getMetrics();
-        const statsUpdate = {
-            type: 'system_stats',
-            stats: {
-                cpu: metrics.cpu,
-                memory: metrics.memory,
-                disk: metrics.disk,
-                temperature: metrics.temperature,
-                timestamp: metrics.timestamp
-            }
-        };
-        
-        wss.clients.forEach(client => {
-            if (client.readyState === WebSocket.OPEN) {
-                client.send(JSON.stringify(statsUpdate));
-            }
-        });
-    } catch (error) {
-        console.error('Failed to broadcast system stats:', error);
-    }
-}, 5000);
+// Smart monitoring system - only active when needed
+let statsInterval = null;
+let serverStatsInterval = null;
+let activeClients = 0;
 
-// Update server stats every 5 seconds
-setInterval(() => {
-    serverManager.updateServerStats();
-}, 5000);
+const startMonitoring = () => {
+    if (statsInterval) return; // Already running
+    
+    console.log('🔍 Starting monitoring (clients connected or servers running)');
+    
+    // Enable performance manager monitoring
+    if (perfManager && perfManager.enableMonitoring) {
+        perfManager.enableMonitoring();
+    }
+    
+    // Broadcast system stats to all clients every 5 seconds (only when clients connected)
+    statsInterval = setInterval(async () => {
+        if (!perfManager || !perfManager.getMetrics) return;
+        if (wss.clients.size === 0) return; // Skip if no clients
+        
+        try {
+            const metrics = await perfManager.getMetrics();
+            const statsUpdate = {
+                type: 'system_stats',
+                stats: {
+                    cpu: metrics.cpu,
+                    memory: metrics.memory,
+                    disk: metrics.disk,
+                    temperature: metrics.temperature,
+                    timestamp: metrics.timestamp
+                }
+            };
+            
+            wss.clients.forEach(client => {
+                if (client.readyState === WebSocket.OPEN) {
+                    client.send(JSON.stringify(statsUpdate));
+                }
+            });
+        } catch (error) {
+            console.error('Failed to broadcast system stats:', error);
+        }
+    }, 5000);
+
+    // Update server stats every 5 seconds (only when servers exist)
+    serverStatsInterval = setInterval(() => {
+        if (serverManager.servers.size > 0) {
+            serverManager.updateServerStats();
+        }
+    }, 5000);
+};
+
+const stopMonitoring = () => {
+    if (activeClients === 0 && serverManager.servers.size === 0) {
+        console.log('💤 Stopping monitoring (no clients or servers - saving CPU)');
+        
+        if (statsInterval) {
+            clearInterval(statsInterval);
+            statsInterval = null;
+        }
+        
+        if (serverStatsInterval) {
+            clearInterval(serverStatsInterval);
+            serverStatsInterval = null;
+        }
+        
+        // Disable performance manager monitoring
+        if (perfManager && perfManager.disableMonitoring) {
+            perfManager.disableMonitoring();
+        }
+    }
+};
+            serverStatsInterval = null;
+        }
+    }
+};
+
+// Check if monitoring should run
+const checkMonitoring = () => {
+    const shouldMonitor = activeClients > 0 || serverManager.servers.size > 0;
+    
+    if (shouldMonitor && !statsInterval) {
+        startMonitoring();
+    } else if (!shouldMonitor && statsInterval) {
+        stopMonitoring();
+    }
+};
 
 // Graceful shutdown
 const shutdown = async (signal) => {

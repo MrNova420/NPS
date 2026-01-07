@@ -6,7 +6,7 @@ Transform your Android phone into a powerful, production-ready server with enter
 [![Version](https://img.shields.io/badge/version-1.0.0--beta-green.svg)](https://github.com/MrNova420/NPS)
 [![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Termux-orange.svg)](https://termux.dev)
 
-> **⚡ Latest Update:** Critical dashboard fixes applied! CPU feedback loop fixed, template loading corrected, SSH blocking resolved. All systems operational. [See details](FIXES_APPLIED.md)
+> **⚡ Latest Update:** All setup issues fixed! Project is now fully functional with comprehensive documentation. [See what was fixed](FIXES_SUMMARY.md)
 
 ## Overview
 
@@ -21,6 +21,20 @@ NPS turns any Android device into a professional server platform with automatic 
 - **Auto-Recovery** - Automatic failure detection and restart
 - **Enterprise Security** - SSL/TLS, firewalls, automated backups
 - **Termux Optimized** - Runs perfectly on Android
+
+## 📚 Documentation
+
+**Start Here:**
+- 🚀 [**QUICK_USAGE.md**](QUICK_USAGE.md) - 5-minute quick start guide
+- 📖 [**USAGE_GUIDE.md**](USAGE_GUIDE.md) - Complete in-depth usage guide
+- 🎯 [**GETTING_STARTED.md**](GETTING_STARTED.md) - Installation and setup
+
+**Additional Guides:**
+- [START_HERE.md](START_HERE.md) - Feature overview
+- [QUICKSTART.md](QUICKSTART.md) - Deploy your first server
+- [ADVANCED_README.md](ADVANCED_README.md) - Advanced features
+- [PRODUCTION_README.md](PRODUCTION_README.md) - Production deployment
+- [FIXES_SUMMARY.md](FIXES_SUMMARY.md) - What was fixed in latest update
 
 ## Quick Start
 
@@ -53,11 +67,12 @@ git clone https://github.com/MrNova420/NPS.git
 cd NPS
 bash setup.sh
 
-# 4. Start SSH server
-sshd
+# 4. Find your Android device IP:
+bash get-ip.sh
+# Or manually: ip addr show wlan0 | grep "inet "
 
-# 5. Find your IP address
-ifconfig
+# 5. Start SSH server
+sshd
 
 # 6. Start services
 ~/server/scripts/service-manager.sh start
@@ -86,7 +101,10 @@ Access dashboard at `http://localhost:3000`
 ### Manual PC Setup
 
 ```bash
-# 1. Find phone IP (on Android): ifconfig
+# 1. Find phone IP (on Android): 
+bash get-ip.sh
+# Or: ip addr show wlan0 | grep "inet "
+
 # 2. Create dashboard/.env:
 cat > dashboard/.env << EOF
 ANDROID_HOST=192.168.1.50  # Your phone's IP
